@@ -12,10 +12,11 @@ namespace WallBurst.Effects
         private Piece[] _pieces = System.Array.Empty<Piece>();
         private Color _color = Color.white;
         private float _age;
-        private const float Span = 1.15f;
+        private const float Lifetime = 1f;
 
         /// <summary>
-        /// 種類を選んで再生する。0 輪、1 閃光、2 粒、それ以外は二重の閃光。
+        /// 種類を選んで再生する。
+        /// 0 輪、1 閃光、2 粒、3 二重、4 波紋、5 十字、6 渦、7 花、それ以外は閃光粒。
         /// </summary>
         /// <param name="kind">演出の種類。</param>
         /// <param name="color">色。</param>
@@ -34,9 +35,29 @@ namespace WallBurst.Effects
             {
                 CreateSparks();
             }
-            else
+            else if (kind == 3)
             {
                 CreatePulse();
+            }
+            else if (kind == 4)
+            {
+                CreateRipples();
+            }
+            else if (kind == 5)
+            {
+                CreateCross();
+            }
+            else if (kind == 6)
+            {
+                CreateSwirl();
+            }
+            else if (kind == 7)
+            {
+                CreatePetals();
+            }
+            else
+            {
+                CreateFlashSparks();
             }
         }
 
@@ -72,7 +93,13 @@ namespace WallBurst.Effects
                 return true;
             }
 
-            float t = local / Span;
+            float duration = Lifetime - piece.Delay;
+            if (duration < 0.05f)
+            {
+                duration = 0.05f;
+            }
+
+            float t = local / duration;
             if (t >= 1f)
             {
                 SetAlpha(piece.Image, 0f);
@@ -140,6 +167,88 @@ namespace WallBurst.Effects
         }
 
         /// <summary>
+        /// 時間差の長い輪を5つ、波紋のように広げる。
+        /// </summary>
+        private void CreateRipples()
+        {
+            _pieces = new Piece[5];
+            for (int i = 0; i < 5; i++)
+            {
+                Image image = CreateGraphic(WallEffectSprites.Ring, 820f);
+                _pieces[i] = PieceAt(image, Vector2.zero, Vector2.zero, 0.16f * i, 0.04f, 1.25f, 0.75f);
+            }
+        }
+
+        /// <summary>
+        /// 上下左右へだけ粒を飛ばす。
+        /// </summary>
+        private void CreateCross()
+        {
+            const int count = 12;
+            _pieces = new Piece[count];
+            for (int i = 0; i < count; i++)
+            {
+                Image image = CreateGraphic(WallEffectSprites.Spark, 56f);
+                float angle = (Mathf.PI * 0.5f) * (i % 4);
+                float speed = 180f + (90f * (i / 4));
+                Vector2 velocity = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * speed;
+                _pieces[i] = PieceAt(image, Vector2.zero, velocity, 0.02f * (i / 4), 0.8f, 0.2f, 1f);
+            }
+        }
+
+        /// <summary>
+        /// 斜めに回りながら外へ出る粒。
+        /// </summary>
+        private void CreateSwirl()
+        {
+            const int count = 14;
+            _pieces = new Piece[count];
+            for (int i = 0; i < count; i++)
+            {
+                Image image = CreateGraphic(WallEffectSprites.Spark, 42f);
+                float angle = (Mathf.PI * 2f * i) / count;
+                Vector2 outward = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle));
+                Vector2 tangent = new Vector2(-outward.y, outward.x);
+                Vector2 velocity = (outward * 160f) + (tangent * 280f);
+                _pieces[i] = PieceAt(image, outward * 40f, velocity, 0.01f * (i % 4), 0.6f, 0.1f, 1f);
+            }
+        }
+
+        /// <summary>
+        /// 中心の周りに、小さな輪を花びらのように置く。
+        /// </summary>
+        private void CreatePetals()
+        {
+            const int count = 6;
+            _pieces = new Piece[count];
+            for (int i = 0; i < count; i++)
+            {
+                Image image = CreateGraphic(WallEffectSprites.Ring, 280f);
+                float angle = (Mathf.PI * 2f * i) / count;
+                Vector2 origin = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * 150f;
+                _pieces[i] = PieceAt(image, origin, Vector2.zero, 0.05f * (i % 3), 0.2f, 1.1f, 0.9f);
+            }
+        }
+
+        /// <summary>
+        /// 中心の閃光と、短い粒。
+        /// </summary>
+        private void CreateFlashSparks()
+        {
+            const int sparks = 8;
+            _pieces = new Piece[sparks + 1];
+            Image flash = CreateGraphic(WallEffectSprites.Soft, 640f);
+            _pieces[0] = PieceAt(flash, Vector2.zero, Vector2.zero, 0f, 0.25f, 1.1f, 0.7f);
+            for (int i = 0; i < sparks; i++)
+            {
+                Image image = CreateGraphic(WallEffectSprites.Spark, 40f);
+                float angle = (Mathf.PI * 2f * i) / sparks;
+                Vector2 velocity = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * 140f;
+                _pieces[i + 1] = PieceAt(image, Vector2.zero, velocity, 0.04f, 0.7f, 0.2f, 1f);
+            }
+        }
+
+        /// <summary>
         /// 子イメージを1つ作る。レイキャストは受けない。
         /// </summary>
         private Image CreateGraphic(Sprite sprite, float size)
@@ -150,7 +259,8 @@ namespace WallBurst.Effects
             rect.anchorMin = new Vector2(0.5f, 0.5f);
             rect.anchorMax = new Vector2(0.5f, 0.5f);
             rect.pivot = new Vector2(0.5f, 0.5f);
-            rect.sizeDelta = new Vector2(size, size);
+            float drawn = size * 1.25f;
+            rect.sizeDelta = new Vector2(drawn, drawn);
             Image image = child.AddComponent<Image>();
             image.sprite = sprite;
             image.color = _color;
