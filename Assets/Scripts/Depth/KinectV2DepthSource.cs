@@ -7,7 +7,7 @@ namespace WallBurst.Depth
     /// <summary>
     /// Kinect for Windows ランタイム 2.0 の Kinect20.dll から深度だけを読む。
     /// 公式の Microsoft.Kinect.dll は C++/CLI のため、Unity では読み込めない。
-    /// センサー面は壁とほぼ平行（壁を正面に見る向き）を前提にする。
+    /// 置き方は調整画面で、壁の真下から見上げるか、壁沿いの水平かを選ぶ。
     /// 取得したフレームは毎回 Release し、長時間運転で COM を溜めない。
     /// </summary>
     public sealed class KinectV2DepthSource : MonoBehaviour, IDepthSource
@@ -43,6 +43,9 @@ namespace WallBurst.Depth
 
         /// <summary>画面に出す状態。</summary>
         public string StatusMessage { get; private set; }
+
+        /// <summary>左右を入れ替える。プレビューと当たり判定は同じ向きになる。</summary>
+        public bool MirrorHorizontally { get; set; } = true;
 
         /// <summary>
         /// センサーを開く。
@@ -230,9 +233,43 @@ namespace WallBurst.Depth
 
             Marshal.Copy(nativeBuffer, _signedCopy, 0, length);
             Buffer.BlockCopy(_signedCopy, 0, _buffer, 0, length * sizeof(ushort));
+            if (MirrorHorizontally)
+            {
+                MirrorHorizontal(_buffer, Width, Height);
+            }
+
             _serial++;
             HasFrame = true;
             StatusMessage = "Kinect の深度を受信しています。";
+        }
+
+        /// <summary>
+        /// 各行の左右を入れ替える。
+        /// </summary>
+        /// <param name="pixels">ミリメートル深度。</param>
+        /// <param name="width">幅。</param>
+        /// <param name="height">高さ。</param>
+        public static void MirrorHorizontal(ushort[] pixels, int width, int height)
+        {
+            if (pixels == null || width <= 1 || height <= 0 || pixels.Length < width * height)
+            {
+                return;
+            }
+
+            for (int y = 0; y < height; y++)
+            {
+                int row = y * width;
+                int left = 0;
+                int right = width - 1;
+                while (left < right)
+                {
+                    ushort swap = pixels[row + left];
+                    pixels[row + left] = pixels[row + right];
+                    pixels[row + right] = swap;
+                    left++;
+                    right--;
+                }
+            }
         }
 
         /// <summary>
