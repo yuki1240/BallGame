@@ -10,7 +10,7 @@ namespace WallBurst.Ui
 {
     /// <summary>
     /// 現場用の調整画面。深度を見ながら四隅と基準を録り、しきい値をその場で変える。
-    /// 結果はメモリにだけ残り、ファイルには書かない。
+    /// 結果は次の起動でも戻る。リセットで保存ごと消える。
     /// </summary>
     public sealed class CalibrationSceneController : MonoBehaviour
     {
@@ -29,12 +29,20 @@ namespace WallBurst.Ui
         private Text _note;
         private Text _recordLabel;
         private Text _sourceLabel;
+        private Image _alongMountImage;
+        private Image _underMountImage;
+        private Text _guide;
+        private static readonly Color MountSelected = new Color(0.16f, 0.52f, 0.4f, 1f);
+        private static readonly Color MountIdle = new Color(0.22f, 0.26f, 0.3f, 1f);
         private Button _recordButton;
         private Button _testButton;
         private Button _startButton;
         private LabeledSlider _noise;
         private LabeledSlider _approach;
         private LabeledSlider _area;
+        private LabeledSlider _personArea;
+        private LabeledSlider _personSpan;
+        private LabeledSlider _personHold;
         private LabeledSlider _confirm;
         private int _pickIndex;
         private int _lastSerial = -1;
@@ -44,7 +52,7 @@ namespace WallBurst.Ui
         private bool _suppressSuggest;
         private bool _haveSeenSource;
         private bool _seenUseKinect;
-        private string _noteBody = "設定はこの起動中だけ残ります。終了したら、もう一度録ってください。";
+        private string _noteBody = "四隅と基準は次の起動でも残ります。やり直すときはリセットを押してください。";
 
         /// <summary>
         /// セッションと画面を用意する。前回の調整がメモリにあれば戻す。
@@ -84,6 +92,7 @@ namespace WallBurst.Ui
         {
             _tuning = data.Tuning;
             _suppressSuggest = true;
+            _noteBody = "前回の四隅と基準を戻しました。";
             for (int i = 0; i < 4; i++)
             {
                 _defined[i] = data.IsCornerDefined(i);
@@ -123,26 +132,48 @@ namespace WallBurst.Ui
             _status = UiFactory.CreateBody(content, string.Empty, 24, 72f, TextAnchor.UpperLeft);
             _instruction = UiFactory.CreateBody(content, string.Empty, 26, 96f, TextAnchor.UpperLeft);
             _instruction.color = new Color(1f, 0.9f, 0.55f, 1f);
-            UiFactory.CreateBody(content, "Kinect は壁とほぼ平行に、壁を正面から見る向きで置いてください。少し斜めでも四隅で吸収します。人が映らない状態で基準を録り、そのあと壁際へボールを出してオレンジになるか見てください。", 22, 150f, TextAnchor.UpperLeft);
+            _guide = UiFactory.CreateBody(content, MountGuide(_session.Mount), 22, 340f, TextAnchor.UpperLeft);
 
-            Button reset = UiFactory.CreateButton(content, "四隅を指定し直す", new Color(0.28f, 0.32f, 0.38f, 1f));
-            reset.onClick.AddListener(ResetCorners);
+            Button resetCorners = UiFactory.CreateButton(content, "四隅を指定し直す", new Color(0.28f, 0.32f, 0.38f, 1f));
+            resetCorners.onClick.AddListener(ResetCorners);
+            Button resetAll = UiFactory.CreateButton(content, "リセット", new Color(0.55f, 0.22f, 0.18f, 1f));
+            resetAll.onClick.AddListener(ResetCalibration);
             _recordButton = UiFactory.CreateButton(content, "基準の深度を記録", new Color(0.16f, 0.42f, 0.58f, 1f));
             _recordLabel = _recordButton.GetComponentInChildren<Text>();
             _recordButton.onClick.AddListener(BeginRecording);
             Button source = UiFactory.CreateButton(content, "入力を切り替え", new Color(0.33f, 0.28f, 0.18f, 1f));
             _sourceLabel = source.GetComponentInChildren<Text>();
             source.onClick.AddListener(ToggleSource);
+            UiFactory.CreateBody(content, "Kinect の置き方を、どちらか押して選んでください。", 22, 56f, TextAnchor.MiddleLeft);
+            Button along = UiFactory.CreateButton(content, "横に設置", MountIdle);
+            _alongMountImage = along.GetComponent<Image>();
+            along.onClick.AddListener(SelectAlongWall);
+            Button under = UiFactory.CreateButton(content, "真下に設置", MountIdle);
+            _underMountImage = under.GetComponent<Image>();
+            under.onClick.AddListener(SelectLookingUp);
+            Toggle mirror = HudControls.CreateCheckbox(content, "左右を反転");
+            LayoutElement mirrorLayout = mirror.gameObject.AddComponent<LayoutElement>();
+            mirrorLayout.preferredHeight = 56f;
+            bool mirrored = _session.Kinect == null || _session.Kinect.MirrorHorizontally;
+            mirror.SetIsOnWithoutNotify(mirrored);
+            mirror.onValueChanged.AddListener(OnMirrorChanged);
             _testButton = UiFactory.CreateButton(content, "模擬ボールを壁の中央へ", new Color(0.4f, 0.24f, 0.42f, 1f));
             _testButton.onClick.AddListener(InjectTestBall);
 
             _noise = UiFactory.CreateSlider(content, "ノイズ床", 15f, 150f, _tuning.NoiseFloorMillimeters);
-            _approach = UiFactory.CreateSlider(content, "壁から見る距離", 80f, 800f, _tuning.MaxApproachMillimeters);
+            _approach = UiFactory.CreateSlider(content, "壁から何cm以内", DetectionTuning.MinApproachCentimeters, DetectionTuning.MaxApproachCentimeters, _tuning.GetApproachCentimeters());
+            _approach.Slider.wholeNumbers = true;
             _area = UiFactory.CreateSlider(content, "最小の塊", 8f, 160f, _tuning.MinBlobArea);
+            _personArea = UiFactory.CreateSlider(content, "人の大きさ", 40f, 20000f, _tuning.MaxBlobArea);
+            _personSpan = UiFactory.CreateSlider(content, "人の長さ", 12f, 320f, _tuning.MaxBlobSpan);
+            _personHold = UiFactory.CreateSlider(content, "人が去ったあとの無視", 0f, 20f, Mathf.RoundToInt(_tuning.PersonHoldSeconds * 10f));
             _confirm = UiFactory.CreateSlider(content, "安定フレーム", 1f, 5f, _tuning.ConfirmFrames);
             _noise.Slider.onValueChanged.AddListener(OnNoise);
             _approach.Slider.onValueChanged.AddListener(OnApproach);
             _area.Slider.onValueChanged.AddListener(OnArea);
+            _personArea.Slider.onValueChanged.AddListener(OnPersonArea);
+            _personSpan.Slider.onValueChanged.AddListener(OnPersonSpan);
+            _personHold.Slider.onValueChanged.AddListener(OnPersonHold);
             _confirm.Slider.onValueChanged.AddListener(OnConfirm);
 
             _note = UiFactory.CreateBody(content, _noteBody, 22, 90f, TextAnchor.UpperLeft);
@@ -360,6 +391,8 @@ namespace WallBurst.Ui
             {
                 _session.Detector.RebuildRoi();
             }
+
+            _session.Remember();
         }
 
         /// <summary>
@@ -405,6 +438,7 @@ namespace WallBurst.Ui
                 _session.Commit(data);
             }
 
+            _session.Remember();
             _noteBody = "基準を記録しました。壁際がオレンジなら、ゲームへ進めます。";
         }
 
@@ -431,9 +465,40 @@ namespace WallBurst.Ui
                 {
                     _session.Detector.RebuildRoi();
                 }
+
+                _session.Remember();
             }
 
             _noteBody = "左上から順に、投影範囲の四隅を深度画像でタップしてください。";
+        }
+
+        /// <summary>
+        /// 四隅、基準、しきい値と保存ファイルを消し、最初の状態へ戻す。
+        /// </summary>
+        private void ResetCalibration()
+        {
+            CancelRecording();
+            _session.ClearCalibration();
+            _session.SetMount(KinectMount.AlongWall);
+            _tuning = new DetectionTuning();
+            ApplyTuningToSliders();
+            _suppressSuggest = false;
+            ClearLocalCorners();
+            _noteBody = "キャリブレーションを消しました。四隅と基準からやり直してください。";
+        }
+
+        /// <summary>
+        /// スライダーを、今のしきい値へ合わせる。
+        /// </summary>
+        private void ApplyTuningToSliders()
+        {
+            _noise.Slider.SetValueWithoutNotify(_tuning.NoiseFloorMillimeters);
+            _approach.Slider.SetValueWithoutNotify(_tuning.GetApproachCentimeters());
+            _area.Slider.SetValueWithoutNotify(_tuning.MinBlobArea);
+            _personArea.Slider.SetValueWithoutNotify(_tuning.MaxBlobArea);
+            _personSpan.Slider.SetValueWithoutNotify(_tuning.MaxBlobSpan);
+            _personHold.Slider.SetValueWithoutNotify(Mathf.RoundToInt(_tuning.PersonHoldSeconds * 10f));
+            _confirm.Slider.SetValueWithoutNotify(_tuning.ConfirmFrames);
         }
 
         /// <summary>
@@ -448,6 +513,80 @@ namespace WallBurst.Ui
                 _defined[i] = false;
                 _corners[i] = Vector2.zero;
             }
+        }
+
+        /// <summary>
+        /// Kinect の深度を左右入れ替える。向きが変わるので、録り済みの基準は捨てる。
+        /// </summary>
+        /// <param name="mirror">反転するなら true。</param>
+        private void OnMirrorChanged(bool mirror)
+        {
+            if (_session.Kinect != null)
+            {
+                _session.Kinect.MirrorHorizontally = mirror;
+            }
+
+            if (!_session.UseKinect)
+            {
+                _noteBody = mirror
+                    ? "Kinect の映像は左右反転します。"
+                    : "Kinect の映像は反転しません。";
+                return;
+            }
+
+            CancelRecording();
+            _session.ClearCalibration();
+            ClearLocalCorners();
+            _noteBody = "左右を反転しました。四隅と基準を録り直してください。";
+        }
+
+        /// <summary>
+        /// 壁沿いの水平設置を選ぶ。
+        /// </summary>
+        private void SelectAlongWall()
+        {
+            SelectMount(KinectMount.AlongWall, "横に設置を選びました。四隅と基準を録り直してください。");
+        }
+
+        /// <summary>
+        /// 壁の真下から見上げる設置を選ぶ。
+        /// </summary>
+        private void SelectLookingUp()
+        {
+            SelectMount(KinectMount.LookingUp, "真下に設置を選びました。四隅と基準を録り直してください。");
+        }
+
+        /// <summary>
+        /// 設置を選ぶ。同じ設置をもう一度押したときは、録り済みの基準を残す。
+        /// </summary>
+        /// <param name="mount">選ぶ置き方。</param>
+        /// <param name="note">切り替えたときに出す一文。</param>
+        private void SelectMount(KinectMount mount, string note)
+        {
+            if (_session.Mount == mount)
+            {
+                return;
+            }
+
+            _session.SetMount(mount);
+            CancelRecording();
+            _session.ClearCalibration();
+            ClearLocalCorners();
+            _suppressSuggest = _session.UseKinect;
+            _noteBody = note;
+        }
+
+        /// <summary>
+        /// 今の設置の説明。
+        /// </summary>
+        /// <param name="mount">Kinect の置き方。</param>
+        /// <returns>画面の案内。</returns>
+        private static string MountGuide(KinectMount mount)
+        {
+            string place = mount == KinectMount.LookingUp
+                ? "いまは壁の真下から上向きです。深度画像の下が近く、上が遠く映ります。"
+                : "いまは壁と水平です。Xbox ロゴが操作側を向きます。深度画像の下が近く、上にいくほど遠くなります。";
+            return place + "投影する範囲の四隅をタップしてください。人が映らない状態で基準を録り、そのあと壁際へボールを出してオレンジになるか見てください。スポンジボールのような軽い物は「壁から何cm以内」に入るとエフェクトになります。遠くの人は、この距離を狭めてください。近くに立つ人や歩く人は「人の大きさ」と「人の長さ」を、ボールだけ検知が増える位置まで下げてください。";
         }
 
         /// <summary>
@@ -485,6 +624,7 @@ namespace WallBurst.Ui
                 return;
             }
 
+            _session.Remember();
             SceneManager.LoadScene(SceneNames.Game);
         }
 
@@ -535,6 +675,10 @@ namespace WallBurst.Ui
             }
 
             string hits = _session.Detector == null ? string.Empty : "  検知 " + _observedHits + " 回";
+            if (_session.Detector != null && _session.Detector.PersonSuppressed)
+            {
+                hits += "  人を無視";
+            }
             _status.text = device + hits;
             _instruction.text = BuildInstruction();
             _note.text = _noteBody;
@@ -542,11 +686,18 @@ namespace WallBurst.Ui
                 ? "記録中 " + _accumulator.CollectedFrames + " / " + _accumulator.TargetFrames
                 : "基準の深度を記録";
             _sourceLabel.text = _session.UseKinect ? "シミュレーションで確認" : "Kinect を使う";
+            bool lookingUp = _session.Mount == KinectMount.LookingUp;
+            _alongMountImage.color = lookingUp ? MountIdle : MountSelected;
+            _underMountImage.color = lookingUp ? MountSelected : MountIdle;
+            _guide.text = MountGuide(_session.Mount);
             _recordButton.interactable = !_recording && source != null && source.HasFrame;
             _testButton.interactable = !_recording && !_session.UseKinect && _pickIndex >= 4;
             _noise.Caption.text = "ノイズ床  " + _tuning.NoiseFloorMillimeters + " mm（小さい揺れを無視）";
-            _approach.Caption.text = "壁から見る距離  " + _tuning.MaxApproachMillimeters + " mm";
+            _approach.Caption.text = "壁から " + _tuning.GetApproachCentimeters() + " cm以内";
             _area.Caption.text = "最小の塊  " + _tuning.MinBlobArea + " px";
+            _personArea.Caption.text = "人の大きさ  " + _tuning.MaxBlobArea + " px";
+            _personSpan.Caption.text = "人の長さ  " + _tuning.MaxBlobSpan + " px";
+            _personHold.Caption.text = "人が去ったあと  " + _tuning.PersonHoldSeconds.ToString("0.0") + " 秒";
             _confirm.Caption.text = "小さい塊の安定フレーム  " + _tuning.ConfirmFrames;
         }
 
@@ -568,6 +719,15 @@ namespace WallBurst.Ui
             if (_session.Calibration == null)
             {
                 return "四隅は揃っています。「基準の深度を記録」を押してから、ゲームを開始してください。";
+            }
+
+            if (_session.Detector != null)
+            {
+                string coverage = _session.Detector.CoverageWarning();
+                if (coverage != null)
+                {
+                    return coverage.Replace("\n", string.Empty);
+                }
             }
 
             if (_suggested)
@@ -614,31 +774,61 @@ namespace WallBurst.Ui
 
             Vector2 pixel = QuadMapper.WallToPixel(0.5f, 0.5f, _corners[0], _corners[1], _corners[2], _corners[3]);
             int radius = Mathf.Max(6, source.Width / 34);
-            _session.Simulator.Inject(Mathf.RoundToInt(pixel.x), Mathf.RoundToInt(pixel.y), radius, 170, 8);
+            int closer = Mathf.Max(_tuning.NoiseFloorMillimeters + 10, _tuning.MaxApproachMillimeters - 30);
+            _session.Simulator.Inject(Mathf.RoundToInt(pixel.x), Mathf.RoundToInt(pixel.y), radius, closer, 8);
         }
 
         /// <summary>ノイズ床を更新する。</summary>
         private void OnNoise(float value)
         {
             _tuning.NoiseFloorMillimeters = Mathf.RoundToInt(value);
+            _session.Remember();
         }
 
-        /// <summary>壁から見る距離を更新する。</summary>
+        /// <summary>壁から何cm以内でエフェクトを出すかを更新する。</summary>
+        /// <param name="value">センチメートル。</param>
         private void OnApproach(float value)
         {
-            _tuning.MaxApproachMillimeters = Mathf.RoundToInt(value);
+            _tuning.SetApproachCentimeters(Mathf.RoundToInt(value));
+            _session.Remember();
         }
 
         /// <summary>最小面積を更新する。</summary>
         private void OnArea(float value)
         {
             _tuning.MinBlobArea = Mathf.RoundToInt(value);
+            _session.Remember();
+        }
+
+        /// <summary>人として無視する変化量を更新する。</summary>
+        /// <param name="value">画素の合計。</param>
+        private void OnPersonArea(float value)
+        {
+            _tuning.MaxBlobArea = Mathf.RoundToInt(value);
+            _session.Remember();
+        }
+
+        /// <summary>人として無視する縦横の長さを更新する。</summary>
+        /// <param name="value">画素数。</param>
+        private void OnPersonSpan(float value)
+        {
+            _tuning.MaxBlobSpan = Mathf.RoundToInt(value);
+            _session.Remember();
+        }
+
+        /// <summary>人が去ったあとに無視する時間を更新する。</summary>
+        /// <param name="value">0.1秒単位。</param>
+        private void OnPersonHold(float value)
+        {
+            _tuning.PersonHoldSeconds = value / 10f;
+            _session.Remember();
         }
 
         /// <summary>安定フレーム数を更新する。</summary>
         private void OnConfirm(float value)
         {
             _tuning.ConfirmFrames = Mathf.RoundToInt(value);
+            _session.Remember();
         }
     }
 }
