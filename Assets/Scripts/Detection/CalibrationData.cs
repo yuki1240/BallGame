@@ -4,7 +4,7 @@ using UnityEngine;
 namespace WallBurst.Detection
 {
     /// <summary>
-    /// 設置時の基準深度と、投影範囲の四隅。ディスクには書かず、起動中のメモリだけに持つ。
+    /// 設置時の基準深度と、投影範囲の四隅。
     /// 四隅の順は左上、右上、右下、左下。画素の Y は深度画像の上を 0 とする。
     /// </summary>
     public sealed class CalibrationData
