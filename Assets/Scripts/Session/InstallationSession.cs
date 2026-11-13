@@ -1,18 +1,22 @@
 using UnityEngine;
 using WallBurst.Depth;
 using WallBurst.Detection;
+using WallBurst.Effects;
 
 namespace WallBurst.Session
 {
     /// <summary>
-    /// キャリブレーション結果と深度源を、シーンをまたいでメモリに保持する。
-    /// ファイルへは書き出さない。アプリを終了すると消える。
+    /// キャリブレーション結果と深度源を、シーンをまたいで保持する。
+    /// 確定した基準は永続フォルダにも残り、次の起動で戻す。
     /// </summary>
     public sealed class InstallationSession : MonoBehaviour
     {
         private bool _useKinect = true;
         private bool _sourceLockedByUser;
+        private KinectMount _mount = KinectMount.AlongWall;
         private float _probeRemaining = 3f;
+        private readonly BackgroundPlaylist _backgrounds = new BackgroundPlaylist();
+        private readonly EffectSelection _effects = new EffectSelection();
 
         /// <summary>今の起動に1つだけあるセッション。</summary>
         public static InstallationSession Instance { get; private set; }
@@ -29,6 +33,12 @@ namespace WallBurst.Session
         /// <summary>基準に紐づく検知器。未実施なら null。</summary>
         public WallHitDetector Detector { get; private set; }
 
+        /// <summary>Kinect の置き方。</summary>
+        public KinectMount Mount
+        {
+            get { return _mount; }
+        }
+
         /// <summary>Kinect を優先しているか。未接続のあいだも true のことがある。</summary>
         public bool UseKinect
         {
@@ -39,6 +49,18 @@ namespace WallBurst.Session
         public float KinectProbeRemaining
         {
             get { return _probeRemaining; }
+        }
+
+        /// <summary>背景の切替。シーンをまたいでも同じものを使う。</summary>
+        public BackgroundPlaylist Backgrounds
+        {
+            get { return _backgrounds; }
+        }
+
+        /// <summary>ヒットで出す演出。複数オンなら、その中から1つ出る。</summary>
+        public EffectSelection Effects
+        {
+            get { return _effects; }
         }
 
         /// <summary>今の入力。</summary>
@@ -85,6 +107,9 @@ namespace WallBurst.Session
             DontDestroyOnLoad(gameObject);
             Simulator = gameObject.AddComponent<SimulatedDepthSource>();
             Kinect = gameObject.AddComponent<KinectV2DepthSource>();
+            _mount = CalibrationStore.LoadMount();
+            ApplyMount();
+            LoadSavedCalibration();
         }
 
         /// <summary>
@@ -103,6 +128,7 @@ namespace WallBurst.Session
         /// </summary>
         private void Update()
         {
+            ApplyMount();
             if (_sourceLockedByUser || Calibration != null)
             {
                 return;
@@ -128,6 +154,28 @@ namespace WallBurst.Session
         }
 
         /// <summary>
+        /// 設置を変えて、すぐ保存する。
+        /// </summary>
+        /// <param name="mount">Kinect の置き方。</param>
+        public void SetMount(KinectMount mount)
+        {
+            _mount = mount;
+            ApplyMount();
+            CalibrationStore.SaveMount(mount);
+        }
+
+        /// <summary>
+        /// 模擬深度を、今の設置に合わせる。
+        /// </summary>
+        private void ApplyMount()
+        {
+            if (Simulator != null)
+            {
+                Simulator.LookingUp = _mount == KinectMount.LookingUp;
+            }
+        }
+
+        /// <summary>
         /// 入力を切り替える。ユーザー操作のときは自動切替を止める。
         /// </summary>
         /// <param name="useKinect">Kinect を使うなら true。</param>
@@ -149,15 +197,58 @@ namespace WallBurst.Session
         {
             Calibration = data;
             Detector = new WallHitDetector(data);
+            Remember();
         }
 
         /// <summary>
-        /// 基準を捨てる。シーンのメモリからも消える。ファイルは元々無い。
+        /// 今の基準をファイルへ書く。基準が無ければ何もしない。
+        /// </summary>
+        public void Remember()
+        {
+            if (Calibration == null)
+            {
+                return;
+            }
+
+            bool mirror = Kinect == null || Kinect.MirrorHorizontally;
+            CalibrationStore.Save(Calibration, mirror, _useKinect, _effects.CopyFlags(), _mount);
+        }
+
+        /// <summary>
+        /// 基準をメモリとファイルの両方から消す。
         /// </summary>
         public void ClearCalibration()
         {
             Calibration = null;
             Detector = null;
+            CalibrationStore.Delete();
+        }
+
+        /// <summary>
+        /// 前回の起動で残した四隅と基準を戻す。
+        /// </summary>
+        private void LoadSavedCalibration()
+        {
+            if (!CalibrationStore.TryLoad(out CalibrationData loaded, out bool mirror, out bool useKinect, out bool[] effects, out KinectMount mount))
+            {
+                return;
+            }
+
+            _effects.Apply(effects);
+            _mount = mount;
+            ApplyMount();
+            CalibrationStore.SaveMount(mount);
+
+            if (Kinect != null)
+            {
+                Kinect.MirrorHorizontally = mirror;
+            }
+
+            _useKinect = useKinect;
+            _sourceLockedByUser = true;
+            _probeRemaining = 0f;
+            Calibration = loaded;
+            Detector = new WallHitDetector(loaded);
         }
 
         /// <summary>
