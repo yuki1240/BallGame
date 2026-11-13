@@ -104,6 +104,8 @@ namespace WallBurst.Detection
             _stamp[start] = _generation;
 
             Blob blob = new Blob();
+            blob.MinX = int.MaxValue;
+            blob.MinY = int.MaxValue;
             while (head < tail)
             {
                 int index = _queue[head++];
@@ -112,6 +114,26 @@ namespace WallBurst.Detection
                 blob.Area++;
                 blob.SumX += x + 0.5f;
                 blob.SumY += y + 0.5f;
+                if (x < blob.MinX)
+                {
+                    blob.MinX = x;
+                }
+
+                if (y < blob.MinY)
+                {
+                    blob.MinY = y;
+                }
+
+                if (x > blob.MaxX)
+                {
+                    blob.MaxX = x;
+                }
+
+                if (y > blob.MaxY)
+                {
+                    blob.MaxY = y;
+                }
+
                 blob.PersistenceSum += persistence == null ? 1 : persistence[index];
                 PushNeighbor(x - 1, y, mask, ref tail);
                 PushNeighbor(x + 1, y, mask, ref tail);
