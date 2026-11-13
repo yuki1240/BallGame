@@ -279,12 +279,144 @@ namespace WallBurst.Tests
         }
 
         /// <summary>
+        /// 体が分かれていても合計が人の大きさなら、そばのボールも出さず、去ったあとも少し待つ。
+        /// </summary>
+        [Test]
+        public void Detect_SuppressesFragmentedPersonUntilHoldEnds()
+        {
+            CalibrationData data = CreateData(80, 60, 2000);
+            data.Tuning.MaxBlobArea = 500;
+            data.Tuning.MaxBlobSpan = 40;
+            data.Tuning.PersonHoldSeconds = 0.4f;
+            data.Tuning.MinBlobArea = 10;
+            WallHitDetector detector = new WallHitDetector(data);
+            ushort[] depth = Filled(80, 60, 2000);
+            PaintRect(depth, 80, 8, 8, 20, 20, 1800);
+            PaintRect(depth, 80, 40, 8, 20, 20, 1800);
+            PaintDisc(depth, 80, 62, 45, 4, 1850);
+            List<WallHit> hits = new List<WallHit>();
+
+            Assert.AreEqual(0, detector.Detect(depth, 0f, hits));
+            Assert.IsTrue(detector.PersonSuppressed);
+
+            ushort[] ball = Filled(80, 60, 2000);
+            PaintDisc(ball, 80, 62, 45, 4, 1850);
+            Assert.AreEqual(0, detector.Detect(ball, 0.2f, hits));
+            Assert.AreEqual(1, detector.Detect(ball, 0.5f, hits));
+        }
+
+        /// <summary>
+        /// 面積が小さくても、縦か横に長い塊は立っている人として出さない。
+        /// </summary>
+        [Test]
+        public void Detect_SuppressesTallOrWidePerson()
+        {
+            CalibrationData tallData = CreateData(40, 80, 2000);
+            tallData.Tuning.MaxBlobArea = 8000;
+            tallData.Tuning.MaxBlobSpan = 30;
+            tallData.Tuning.PersonHoldSeconds = 0f;
+            WallHitDetector tall = new WallHitDetector(tallData);
+            ushort[] standing = Filled(40, 80, 2000);
+            PaintRect(standing, 40, 16, 10, 6, 50, 1850);
+            List<WallHit> hits = new List<WallHit>();
+            Assert.AreEqual(0, tall.Detect(standing, 0f, hits));
+            Assert.IsTrue(tall.PersonSuppressed);
+
+            CalibrationData wideData = CreateData(80, 40, 2000);
+            wideData.Tuning.MaxBlobArea = 8000;
+            wideData.Tuning.MaxBlobSpan = 30;
+            wideData.Tuning.PersonHoldSeconds = 0f;
+            WallHitDetector wide = new WallHitDetector(wideData);
+            ushort[] crossing = Filled(80, 40, 2000);
+            PaintRect(crossing, 80, 10, 16, 50, 6, 1850);
+            Assert.AreEqual(0, wide.Detect(crossing, 0f, hits));
+        }
+
+        /// <summary>
+        /// 正面の壁では、奥行きの差がそのまま壁からの距離になる。
+        /// </summary>
+        [Test]
+        public void WallPlane_FlatWallDistanceMatchesDepthDelta()
+        {
+            CalibrationData data = CreateData(40, 30, 2000);
+            WallPlane plane = WallPlane.Fit(data);
+
+            Assert.IsTrue(plane.Valid);
+            Assert.AreEqual(150, plane.MillimetersCloser(10.5f, 10.5f, 2000, 1850));
+        }
+
+        /// <summary>
+        /// 壁に沿った視線では奥行き差が大きくても、面までの距離が近ければヒットする。
+        /// </summary>
+        [Test]
+        public void Detect_AcceptsBallNearAGrazingWall()
+        {
+            const int width = 64;
+            const int height = 48;
+            ushort[] baseline = GrazingWall(width, height);
+            CalibrationData data = new CalibrationData(width, height, baseline, new DetectionTuning());
+            data.Tuning.EnableDriftCompensation = false;
+            data.Tuning.NoiseFloorMillimeters = 40;
+            data.Tuning.MaxApproachMillimeters = 150;
+            data.Tuning.MinBlobArea = 8;
+            data.SetCorner(0, new Vector2(40.5f, 8.5f));
+            data.SetCorner(1, new Vector2(60.5f, 8.5f));
+            data.SetCorner(2, new Vector2(60.5f, 40.5f));
+            data.SetCorner(3, new Vector2(40.5f, 40.5f));
+            WallHitDetector detector = new WallHitDetector(data);
+
+            ushort[] frame = (ushort[])baseline.Clone();
+            int index = (24 * width) + 50;
+            ushort ballDepth = (ushort)(baseline[index] - 300);
+            PaintDisc(frame, width, 50, 24, 3, ballDepth);
+            WallPlane plane = WallPlane.Fit(data);
+            int gap = plane.MillimetersCloser(50.5f, 24.5f, baseline[index], ballDepth);
+
+            Assert.Greater(300, data.Tuning.MaxApproachMillimeters);
+            Assert.That(gap, Is.InRange(40, 150));
+            List<WallHit> hits = new List<WallHit>();
+            Assert.AreEqual(1, detector.Detect(frame, 0f, hits));
+        }
+
+        /// <summary>
+        /// センサーの右側にある縦の面。視線は壁に沿う。
+        /// </summary>
+        private static ushort[] GrazingWall(int width, int height)
+        {
+            ushort[] depth = new ushort[width * height];
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    float dirX;
+                    float dirY;
+                    WallPlane.CameraRay(width, height, x + 0.5f, y + 0.5f, out dirX, out dirY);
+                    int millimeters = dirX < 0.12f ? 2500 : Mathf.RoundToInt(400f / dirX);
+                    if (millimeters < 1)
+                    {
+                        millimeters = 1;
+                    }
+
+                    if (millimeters > 8000)
+                    {
+                        millimeters = 8000;
+                    }
+
+                    depth[(y * width) + x] = (ushort)millimeters;
+                }
+            }
+
+            return depth;
+        }
+
+        /// <summary>
         /// 四隅が揃うまで範囲は空。
         /// </summary>
         [Test]
         public void RebuildRoi_IgnoresHitsUntilCornersExist()
         {
             CalibrationData data = new CalibrationData(16, 12, Filled(16, 12, 2000), new DetectionTuning());
+            data.Tuning.MaxApproachMillimeters = 380;
             WallHitDetector detector = new WallHitDetector(data);
             ushort[] depth = Filled(16, 12, 1800);
             List<WallHit> hits = new List<WallHit>();

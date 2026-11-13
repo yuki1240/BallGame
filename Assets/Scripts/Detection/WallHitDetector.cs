@@ -9,10 +9,12 @@ namespace WallBurst.Detection
     /// ノイズ抑制は次の順で行う。
     /// 1. 基準が無い画素は見ない。壁があった場所が穴になった画素は、赤外線を返さないボールとして候補にする。
     /// 2. ノイズ床未満の差はセンサーの揺れとして捨てる。
-    /// 3. 壁から遠すぎる差は部屋にいる人として捨てる。
+    /// 3. 壁の面から垂直に遠すぎる点は、部屋にいる人として捨てる。
     /// 4. 3x3 で孤立した画素（フライングピクセル）を捨てる。
     /// 5. ボール級の塊は 1 フレームで採用し、それより小さい塊は数フレーム続いてから採用する。
-    /// 6. 人ひとり分より大きい塊、および同じ場所に留まった物体は出さない。物体追跡はしない。
+    /// 6. 変化の合計が人の大きさ以上、または縦横が人の長さを超える塊があるあいだは、破片も含めて出さない。
+    ///    人がフレームから外れても、指定秒数は歩きの途切れとして出さない。
+    /// 7. 同じ場所に留まった物体は出さない。物体追跡はしない。
     /// </summary>
     public sealed class WallHitDetector
     {
@@ -28,6 +30,10 @@ namespace WallBurst.Detection
         private readonly int _columns;
         private readonly int _rows;
         private int _driftTick;
+        private float _personQuietUntil;
+        private int _roiPixels;
+        private int _validPixels;
+        private int _nearMillimeters;
 
         /// <summary>
         /// 基準と作業バッファを用意する。
@@ -68,6 +74,11 @@ namespace WallBurst.Detection
         }
 
         /// <summary>
+        /// 壁の前の人として、いまヒットを出していない。
+        /// </summary>
+        public bool PersonSuppressed { get; private set; }
+
+        /// <summary>
         /// 四隅から検知範囲を作り直す。
         /// </summary>
         public void RebuildRoi()
@@ -97,6 +108,8 @@ namespace WallBurst.Detection
             Array.Clear(_cooldownUntil, 0, _cooldownUntil.Length);
             Array.Clear(_spatial, 0, _spatial.Length);
             _driftTick = 0;
+            _personQuietUntil = 0f;
+            PersonSuppressed = false;
         }
 
         /// <summary>
@@ -144,13 +157,42 @@ namespace WallBurst.Detection
         }
 
         /// <summary>
-        /// 壁より近く、かつ壁から離れすぎていない画素を候補にする。
+        /// 四隅の内側で、深度を返せている画素が少ないときの案内。問題がなければ null。
+        /// </summary>
+        /// <returns>操作者向けの文。計測前や問題なしは null。</returns>
+        public string CoverageWarning()
+        {
+            if (_roiPixels < 50)
+            {
+                return null;
+            }
+
+            if (_validPixels * 2 < _roiPixels)
+            {
+                return "四隅の内側の半分以上が深度を返していません。\nKinect を動かしたあとは四隅を指定し直し、壁まで 50cm 以上離してください。";
+            }
+
+            if (_nearMillimeters > 0 && _nearMillimeters < 500)
+            {
+                return "壁の近い側が " + _nearMillimeters + "mm です。\n50cm より近い部分は Kinect が測れません。少し離すか、四隅を測れる範囲に合わせてください。";
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// 壁の面より手前で、離れすぎていない画素を候補にする。
         /// </summary>
         private void BuildCandidates(ushort[] depth)
         {
+            WallPlane plane = WallPlane.Fit(_data);
             int floor = _data.Tuning.NoiseFloorMillimeters;
             int ceiling = _data.Tuning.MaxApproachMillimeters;
             ushort[] baseline = _data.Baseline;
+            int width = _data.Width;
+            _roiPixels = 0;
+            _validPixels = 0;
+            _nearMillimeters = 0;
 
             for (int i = 0; i < _pixelCount; i++)
             {
@@ -161,11 +203,18 @@ namespace WallBurst.Detection
                     continue;
                 }
 
+                _roiPixels++;
                 ushort baseDepth = baseline[i];
                 ushort current = depth[i];
                 if (baseDepth == 0)
                 {
                     continue;
+                }
+
+                _validPixels++;
+                if (_nearMillimeters == 0 || baseDepth < _nearMillimeters)
+                {
+                    _nearMillimeters = baseDepth;
                 }
 
                 if (current == 0)
@@ -174,7 +223,9 @@ namespace WallBurst.Detection
                     continue;
                 }
 
-                int closer = baseDepth - current;
+                int closer = plane.Valid
+                    ? plane.MillimetersCloser((i % width) + 0.5f, (i / width) + 0.5f, baseDepth, current)
+                    : baseDepth - current;
                 if (closer >= floor && closer <= ceiling)
                 {
                     _candidate[i] = 1;
@@ -271,6 +322,11 @@ namespace WallBurst.Detection
         private void CollectHits(float nowSeconds, List<WallHit> results)
         {
             _blobs.Extract(_spatial, _persistence, _data.Tuning.MinBlobArea, _blobBuffer, 8);
+            if (HoldForPerson(nowSeconds))
+            {
+                return;
+            }
+
             for (int i = 0; i < _blobBuffer.Count; i++)
             {
                 if (results.Count >= 4)
@@ -299,6 +355,72 @@ namespace WallBurst.Detection
 
                 results.Add(new WallHit(pixel.x, pixel.y, wallU, wallV, blob.Area));
             }
+        }
+
+        /// <summary>
+        /// 人の大きさ、または人の長さに達したら、破片も出さず待ち時間を延ばす。
+        /// </summary>
+        /// <param name="nowSeconds">現在時刻。</param>
+        /// <returns>このフレームのヒットを出さないとき true。</returns>
+        private bool HoldForPerson(float nowSeconds)
+        {
+            if (IsPersonPresent())
+            {
+                _personQuietUntil = nowSeconds + _data.Tuning.PersonHoldSeconds;
+                PersonSuppressed = true;
+                return true;
+            }
+
+            if (nowSeconds < _personQuietUntil)
+            {
+                PersonSuppressed = true;
+                return true;
+            }
+
+            PersonSuppressed = false;
+            return false;
+        }
+
+        /// <summary>
+        /// 変化した画素が多いか、縦か横に長い塊がある。
+        /// </summary>
+        /// <returns>壁の前の人らしいとき true。</returns>
+        private bool IsPersonPresent()
+        {
+            if (CountChangedPixels() > _data.Tuning.MaxBlobArea)
+            {
+                return true;
+            }
+
+            int span = _data.Tuning.MaxBlobSpan;
+            for (int i = 0; i < _blobBuffer.Count; i++)
+            {
+                Blob blob = _blobBuffer[i];
+                if (blob.Width > span || blob.Height > span)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// ノイズ抑制後に残った変化画素の数。
+        /// </summary>
+        /// <returns>画素数。</returns>
+        private int CountChangedPixels()
+        {
+            int count = 0;
+            for (int i = 0; i < _pixelCount; i++)
+            {
+                if (_spatial[i] != 0)
+                {
+                    count++;
+                }
+            }
+
+            return count;
         }
 
         /// <summary>
