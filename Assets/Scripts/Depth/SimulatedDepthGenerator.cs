@@ -5,9 +5,10 @@ using UnityEngine;
 namespace WallBurst.Depth
 {
     /// <summary>
-    /// 壁とほぼ平行に置いた Kinect の深度を模す。
-    /// 左が近く右が遠い、という軽い傾き、毎フレームの揺れ、穴、孤立した飛び画素、
-    /// そして壁より手前に出るボールを生成する。乱数の種はフレーム番号なので結果は再現できる。
+    /// 設置モードに合わせた Kinect の深度を模す。
+    /// 壁沿いも見上げも、画像の下が近く上が遠い。見上げの方が距離の差が大きい。
+    /// 毎フレームの揺れ、穴、孤立した飛び画素、壁より手前のボールも入れる。
+    /// 乱数の種はフレーム番号なので結果は再現できる。
     /// </summary>
     public sealed class SimulatedDepthGenerator
     {
@@ -35,11 +36,14 @@ namespace WallBurst.Depth
         /// <summary>高さ。</summary>
         public int Height { get; private set; }
 
-        /// <summary>画像左端の壁までの距離（mm）。センサーに近い側。</summary>
-        public int NearSideMillimeters = 1700;
+        /// <summary>見上げ設置なら true。false なら壁沿いの水平設置。</summary>
+        public bool LookingUp = false;
 
-        /// <summary>画像右端の壁までの距離（mm）。少し開いた側。</summary>
-        public int FarSideMillimeters = 2450;
+        /// <summary>画像下端の壁までの距離（mm）。センサーに近い、壁の下側。</summary>
+        public int NearBottomMillimeters = 700;
+
+        /// <summary>画像上端の壁までの距離（mm）。見上げた先、壁の上側。</summary>
+        public int FarTopMillimeters = 2600;
 
         /// <summary>壁画素に足す揺れの振幅（mm）。</summary>
         public int NoiseAmplitudeMillimeters = 18;
@@ -108,14 +112,14 @@ namespace WallBurst.Depth
         }
 
         /// <summary>
-        /// 傾いた壁に、揺れと穴と飛び画素を足した1画素。
+        /// 設置に合わせた壁へ、揺れと穴と飛び画素を足した1画素。
+        /// 深度画像の Y は上端が 0。
         /// </summary>
         private ushort SampleWall(int x, int y, int frameIndex)
         {
             float across = x / (float)(Width - 1);
             float down = y / (float)(Height - 1);
-            float wall = Mathf.Lerp(NearSideMillimeters, FarSideMillimeters, across);
-            wall += Mathf.Lerp(-40f, 55f, down);
+            float wall = LookingUp ? SampleLookingUp(across, down) : SampleAlongWall(across, down);
 
             uint hash = Hash(x, y, frameIndex);
             float unit = (hash & 1023u) / 1023f;
@@ -143,6 +147,24 @@ namespace WallBurst.Depth
             }
 
             return (ushort)depth;
+        }
+
+        /// <summary>
+        /// 真下から見上げた壁。上が遠く、下が近い。
+        /// </summary>
+        private float SampleLookingUp(float across, float down)
+        {
+            float wall = Mathf.Lerp(FarTopMillimeters, NearBottomMillimeters, down);
+            return wall + Mathf.Lerp(-25f, 25f, across);
+        }
+
+        /// <summary>
+        /// 壁沿いの水平設置。Xbox ロゴが操作側を向くとき、下が近く、上が遠い。
+        /// </summary>
+        private float SampleAlongWall(float across, float down)
+        {
+            float wall = Mathf.Lerp(2450f, 1700f, down);
+            return wall + Mathf.Lerp(-25f, 25f, across);
         }
 
         /// <summary>
@@ -186,7 +208,7 @@ namespace WallBurst.Depth
                     int current = destination[row + x];
                     if (current == 0)
                     {
-                        current = NearSideMillimeters;
+                        current = NearBottomMillimeters;
                     }
 
                     int next = current - closer;

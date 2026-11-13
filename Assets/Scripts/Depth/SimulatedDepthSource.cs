@@ -31,14 +31,23 @@ namespace WallBurst.Depth
         /// <summary>状態文。</summary>
         public string StatusMessage { get; private set; }
 
+        /// <summary>見上げ設置なら true。false なら壁沿い。</summary>
+        public bool LookingUp
+        {
+            get { return _generator != null && _generator.LookingUp; }
+            set
+            {
+                EnsureReady();
+                _generator.LookingUp = value;
+            }
+        }
+
         /// <summary>
         /// 320×240 で生成器を作る。
         /// </summary>
         private void Awake()
         {
-            _generator = new SimulatedDepthGenerator(320, 240);
-            _buffer = new ushort[_generator.Width * _generator.Height];
-            StatusMessage = "シミュレーション中です。Kinect が繋がると切り替えられます。";
+            EnsureReady();
         }
 
         /// <summary>
@@ -46,10 +55,26 @@ namespace WallBurst.Depth
         /// </summary>
         private void Update()
         {
+            EnsureReady();
             _frameIndex++;
             _generator.Fill(_buffer, _frameIndex);
             _serial++;
             HasFrame = true;
+        }
+
+        /// <summary>
+        /// 生成器とバッファを用意する。再生中の再コンパイルでは Awake が再度走らない。
+        /// </summary>
+        private void EnsureReady()
+        {
+            if (_generator != null && _buffer != null && _buffer.Length == _generator.Width * _generator.Height)
+            {
+                return;
+            }
+
+            _generator = new SimulatedDepthGenerator(320, 240);
+            _buffer = new ushort[_generator.Width * _generator.Height];
+            StatusMessage = "シミュレーション中です。Kinect が繋がると切り替えられます。";
         }
 
         /// <summary>

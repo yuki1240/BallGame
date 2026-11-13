@@ -5,7 +5,7 @@ namespace WallBurst.Detection
 {
     /// <summary>
     /// 深度画像上の四隅と、壁（投影面）の正規化座標を対応づける。
-    /// Kinect が壁と完全な平行でなくても、四隅の指定で傾きを吸収する。
+    /// 壁の真下から上を見るので、四隅の指定で見上げた範囲を投影面に合わせる。
     /// 壁座標は左下 (0,0)、右上 (1,1)。深度の Y は画像上端を 0 とする。
     /// </summary>
     public static class QuadMapper
