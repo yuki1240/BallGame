@@ -1,0 +1,41 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: edc31feb2b0e40269ff13eff71ef1d09, type: 3}
+  m_Name: GameEffectSettings
+  m_EditorClassIdentifier: 
+  flowerBoundary: 1
+  maxConcurrent: 24
+  effectColor: {r: 0.62, g: 0.32, b: 0.95, a: 1}
+  effectScale: 1.25
+  effectDuration: 1
+  flowerHeight: 360
+  flowerGrowSeconds: 1
+  flowerDisplaySeconds: 3
+  flowerFadeSeconds: 0.5
+  themes:
+  - backgroundName: Background_01_Sky
+    flowers:
+    - {fileID: 21300000, guid: 763ac9706b7543eabd0ce0b999a675a1, type: 3}
+    - {fileID: 21300000, guid: 2d73596aecb14e07ad4e76629daa9067, type: 3}
+    effects: []
+  - backgroundName: Background_02_Meadow
+    flowers:
+    - {fileID: 21300000, guid: 763ac9706b7543eabd0ce0b999a675a1, type: 3}
+    - {fileID: 21300000, guid: 2d73596aecb14e07ad4e76629daa9067, type: 3}
+    - {fileID: 21300000, guid: 87654a5cc26e483ab21e4c0a8751869b, type: 3}
+    effects: []
+  - backgroundName: Background_03_Sea
+    flowers:
+    - {fileID: 21300000, guid: 763ac9706b7543eabd0ce0b999a675a1, type: 3}
+    - {fileID: 21300000, guid: 2d73596aecb14e07ad4e76629daa9067, type: 3}
+    - {fileID: 21300000, guid: 87654a5cc26e483ab21e4c0a8751869b, type: 3}
+    effects: []
