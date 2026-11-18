@@ -10,7 +10,7 @@ namespace WallBurst
     /// <item>薄暗い背景の真ん中に、Christmas_Tree_Decorator のツリー（Spruce2）を置く。
     /// 大きさは <see cref="TreeLayout"/> で、スター込みで画面に収まるように決める</item>
     /// <item>ボールが当たるたびに、当たった所から飾りの玉が飛んでいき、ツリーのランダムな場所に1つずつ付く
-    /// （置き場所は <see cref="OrnamentPlacer"/> で、重ならないように先に決めておく）。付いた飾りは <see cref="OrnamentSparkle"/> でいつもきらきら光る</item>
+    /// （置き場所は <see cref="OrnamentPlacer"/> で、重ならないように先に決めておく）。飾りは丸い玉のほか、リース・プレゼントの箱・ベル・星・キャンディケーン（<see cref="OrnamentShapes"/>）。付いた飾りは <see cref="OrnamentSparkle"/> でいつもきらきら光る</item>
     /// <item>数える当たりは 0.5 秒に1回まで（<see cref="CooldownSeconds"/>）。その間の当たりは小さな光だけ出す</item>
     /// <item><see cref="TotalHits"/> 回目（30回目）で、スターがてっぺんに付いて完成</item>
     /// <item>完成したらツリー全体を輝かせ（<see cref="TreeGlow"/>）、<see cref="GlowSeconds"/> 秒たったら次のシーンへ</item>
@@ -33,6 +33,12 @@ namespace WallBurst
         /// <summary>飾りの玉の直径（ツリーの高さに対する割合）。</summary>
         public const float OrnamentSizeRatio = 0.06f;
 
+        /// <summary>飾りどうしを離す距離（飾りの直径に対する倍率）。リースなど大きめの飾りも重ならないようにする。</summary>
+        public const float OrnamentSpacing = 1.45f;
+
+        /// <summary>29個の飾りのうち、丸い玉の数。残りはリース・箱・ベル・星・キャンディケーンを3個ずつ。</summary>
+        public const int BallCount = 14;
+
         /// <summary>スターの高さ（ツリーの高さに対する割合）。</summary>
         public const float StarSizeRatio = 0.13f;
 
@@ -41,6 +47,7 @@ namespace WallBurst
 
         private readonly List<Vector3> slots = new List<Vector3>();
         private readonly List<GameObject> ornaments = new List<GameObject>();
+        private readonly List<int> ornamentBag = new List<int>();
         private readonly System.Random random = new System.Random();
 
         private WallBurstAssets assets;
@@ -54,6 +61,7 @@ namespace WallBurst
         private Vector3 starPosition;
         private Vector3 starScale;
         private float ornamentScale;
+        private OrnamentShapes shapes;
         private int counted;
         private float lastCountedTime = float.NegativeInfinity;
         private bool completed;
@@ -179,7 +187,10 @@ namespace WallBurst
             cone.TopY = treeBounds.max.y - height * 0.12f;
             cone.BottomRadius = radius * 0.88f;
             cone.TopRadius = radius * 0.12f;
-            slots.AddRange(OrnamentPlacer.Generate(cone, TotalHits - 1, height * OrnamentSizeRatio * 1.2f, random));
+            slots.AddRange(OrnamentPlacer.Generate(cone, TotalHits - 1, height * OrnamentSizeRatio * OrnamentSpacing, random));
+            FillOrnamentBag();
+            Renderer sampleRenderer = assets.ornamentPrefabs[0].GetComponentInChildren<Renderer>();
+            shapes = new OrnamentShapes(sampleRenderer != null ? sampleRenderer.sharedMaterial : null);
 
             // スター：高さの 13% にして、てっぺんに置く。はじめは隠しておく
             star = Instantiate(assets.starPrefab, root);
@@ -213,13 +224,12 @@ namespace WallBurst
             int index = random.Next(slots.Count);
             Vector3 slot = slots[index];
             slots.RemoveAt(index);
-            GameObject prefab = assets.ornamentPrefabs[random.Next(assets.ornamentPrefabs.Length)];
-            GameObject ornament = Instantiate(prefab, root);
+            float diameter = treeBounds.size.y * OrnamentSizeRatio;
+            Vector3 scale;
+            GameObject ornament = CreateOrnament(diameter, out scale);
             ornament.name = "飾り " + counted;
             ornament.transform.position = start;
             ornaments.Add(ornament);
-            Vector3 scale = prefab.transform.localScale * ornamentScale;
-            float diameter = treeBounds.size.y * OrnamentSizeRatio;
             FlyTo.Launch(ornament, slot, scale, treeBounds.size.y * 0.15f, 0.7f, () =>
             {
                 if (ornament != null)
@@ -227,6 +237,66 @@ namespace WallBurst
                     OrnamentSparkle.Attach(ornament, diameter, -viewCamera.transform.forward, random);
                 }
             });
+        }
+
+        // 丸い玉と、リース・箱・ベル・星・キャンディケーンを混ぜた袋を作り、よく混ぜる
+        private void FillOrnamentBag()
+        {
+            ornamentBag.Clear();
+            int total = TotalHits - 1;
+            for (int i = 0; i < total; i++)
+            {
+                ornamentBag.Add(i < BallCount ? -1 : (i - BallCount) % OrnamentShapes.KindCount);
+            }
+
+            for (int i = ornamentBag.Count - 1; i > 0; i--)
+            {
+                int j = random.Next(i + 1);
+                int swap = ornamentBag[i];
+                ornamentBag[i] = ornamentBag[j];
+                ornamentBag[j] = swap;
+            }
+        }
+
+        private GameObject CreateOrnament(float diameter, out Vector3 scale)
+        {
+            int kind = ornamentBag.Count > 0 ? ornamentBag[0] : -1;
+            if (ornamentBag.Count > 0)
+            {
+                ornamentBag.RemoveAt(0);
+            }
+
+            if (kind < 0 || shapes == null)
+            {
+                GameObject prefab = assets.ornamentPrefabs[random.Next(assets.ornamentPrefabs.Length)];
+                scale = prefab.transform.localScale * ornamentScale;
+                return Instantiate(prefab, root);
+            }
+
+            OrnamentShapes.Kind shape = (OrnamentShapes.Kind)kind;
+            GameObject ornament = shapes.Create(shape, random);
+            ornament.transform.SetParent(root, false);
+            ornament.transform.rotation = Quaternion.Euler(0f, 0f, ((float)random.NextDouble() * 2f - 1f) * 15f);
+            scale = Vector3.one * diameter * ShapeSize(shape);
+            return ornament;
+        }
+
+        // 丸い玉（直径 1）とくらべた、それぞれの飾りの大きさ
+        private static float ShapeSize(OrnamentShapes.Kind kind)
+        {
+            switch (kind)
+            {
+                case OrnamentShapes.Kind.Wreath:
+                    return 1.35f;
+                case OrnamentShapes.Kind.GiftBox:
+                    return 1.05f;
+                case OrnamentShapes.Kind.Bell:
+                    return 1.2f;
+                case OrnamentShapes.Kind.Star:
+                    return 1.25f;
+                default:
+                    return 1.35f;
+            }
         }
 
         private void PlaceStar(Vector3 start)
@@ -243,6 +313,16 @@ namespace WallBurst
             TreeGlow glow = new GameObject("輝き").AddComponent<TreeGlow>();
             glow.transform.SetParent(root, false);
             glow.Begin(ornaments, star, fullBounds, cone, random);
+        }
+
+        /// <inheritdoc/>
+        protected override void OnDestroy()
+        {
+            base.OnDestroy();
+            if (shapes != null)
+            {
+                shapes.Dispose();
+            }
         }
 
         private Vector3 ScreenToWorld(Vector2 screenPosition)

@@ -6,13 +6,16 @@ namespace WallBurst
     /// <summary>
     /// 飾りの置き場所を、ツリーの上にランダムに、重なりすぎないように決めます（画面に関係しないので、テストで確かめられます）。
     /// <para>ツリーを「円すい」とみなし、カメラから見える前側の面に点を置きます。
-    /// 点どうしは決めた距離以上離します（ポアソン円盤サンプリング：近づきすぎないようにランダムに点を置く方法）。
-    /// どうしても置けないときは、離す距離を少しずつ縮めて、必ず決めた数を置きます。</para>
+    /// 候補の点をたくさんランダムに置き、その中から「すでに選んだ点から十分離れた点」を選んでいきます。
+    /// 決めた距離より離れた点が無くなったら、いちばん離れた点を選ぶので、必ず決めた数を置けて、できるだけ重なりません。</para>
     /// </summary>
     public static class OrnamentPlacer
     {
         /// <summary>前側として使う角度の半分（度）。0° がカメラの正面。</summary>
         public const float FrontHalfAngleDegrees = 65f;
+
+        /// <summary>候補の点の数。</summary>
+        public const int CandidateCount = 2000;
 
         /// <summary>
         /// ツリーの形（円すい）。
@@ -45,28 +48,52 @@ namespace WallBurst
         /// <returns>置き場所（下から上の順ではなく、決めた順）</returns>
         public static List<Vector3> Generate(Cone cone, int count, float minDistance, System.Random random)
         {
-            List<Vector3> points = new List<Vector3>(count);
-            float distance = minDistance;
-            int guard = 0;
-            while (points.Count < count && guard < 100000)
+            // まず、ツリーの前側に候補の点をたくさん（2000個）ランダムに置く
+            List<Vector3> candidates = new List<Vector3>(CandidateCount);
+            for (int i = 0; i < CandidateCount; i++)
             {
-                bool placed = false;
-                for (int attempt = 0; attempt < 60; attempt++)
+                candidates.Add(Sample(cone, random));
+            }
+
+            // 候補の中から、すでに選んだ点からいちばん遠い点を、1つずつ選んでいく（最遠点サンプリング）。
+            // こうすると、点どうしがいちばん離れるように、ツリー全体に散らばる
+            List<Vector3> points = new List<Vector3>(count);
+            float[] nearest = new float[candidates.Count];
+            for (int i = 0; i < nearest.Length; i++)
+            {
+                nearest[i] = float.PositiveInfinity;
+            }
+
+            int pick = random.Next(candidates.Count);
+            while (points.Count < count)
+            {
+                Vector3 chosen = candidates[pick];
+                points.Add(chosen);
+                float best = -1f;
+                int bestIndex = -1;
+                for (int i = 0; i < candidates.Count; i++)
                 {
-                    guard++;
-                    Vector3 candidate = Sample(cone, random);
-                    if (IsFarEnough(candidate, points, distance))
+                    float distance = Vector3.Distance(candidates[i], chosen);
+                    if (distance < nearest[i])
                     {
-                        points.Add(candidate);
-                        placed = true;
-                        break;
+                        nearest[i] = distance;
+                    }
+
+                    // 決めた距離より離れている候補の中からは、ランダムに選ぶ（毎回ちがう並びにする）
+                    float score = nearest[i] >= minDistance ? minDistance + (float)random.NextDouble() * minDistance : nearest[i];
+                    if (score > best)
+                    {
+                        best = score;
+                        bestIndex = i;
                     }
                 }
 
-                if (!placed)
+                if (bestIndex < 0)
                 {
-                    distance *= 0.92f;
+                    break;
                 }
+
+                pick = bestIndex;
             }
 
             return points;
@@ -102,17 +129,5 @@ namespace WallBurst
             return new Vector3(cone.AxisXZ.x + Mathf.Sin(angle) * radius, y, cone.AxisXZ.y - Mathf.Cos(angle) * radius);
         }
 
-        private static bool IsFarEnough(Vector3 candidate, List<Vector3> points, float distance)
-        {
-            foreach (Vector3 point in points)
-            {
-                if (Vector3.Distance(point, candidate) < distance)
-                {
-                    return false;
-                }
-            }
-
-            return true;
-        }
     }
 }
