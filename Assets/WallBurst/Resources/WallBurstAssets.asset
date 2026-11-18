@@ -1,0 +1,20 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 78ab7be3ca294dd0b19259e72fd9aac5, type: 3}
+  m_Name: WallBurstAssets
+  m_EditorClassIdentifier: WallBurst.Runtime::WallBurst.WallBurstAssets
+  treePrefab: {fileID: 1059570931860368561, guid: ba840853dadf9374fb047d36c97968d0, type: 3}
+  ornamentPrefabs:
+  - {fileID: 6432741802390117715, guid: 0dc957c51e7dd7a43ac5c96f6e34a70d, type: 3}
+  - {fileID: 1351748722565789586, guid: b471dcf395470264e9311e3050122e39, type: 3}
+  - {fileID: 8558137626526998246, guid: ccdf3bb04eb70e64787c9c8557236766, type: 3}
+  starPrefab: {fileID: 845928349081791318, guid: c9087064059114e4d9d4940e9be4f87c, type: 3}

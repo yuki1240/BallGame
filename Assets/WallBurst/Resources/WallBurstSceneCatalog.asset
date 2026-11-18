@@ -1,0 +1,21 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 60007af74a8d4a4f8232e7f75aa3af7b, type: 3}
+  m_Name: WallBurstSceneCatalog
+  m_EditorClassIdentifier: WallBurst.Runtime::WallBurst.GameSceneCatalog
+  entries:
+  - sceneName: WB_EffectOnly
+    kidsName: 
+    enabled: 1
+  - sceneName: WB_ChristmasTree
+    kidsName: 
+    enabled: 1
