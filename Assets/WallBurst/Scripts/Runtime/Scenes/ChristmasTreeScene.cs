@@ -10,7 +10,7 @@ namespace WallBurst
     /// <item>薄暗い背景の真ん中に、Christmas_Tree_Decorator のツリー（Spruce2）を置く。
     /// 大きさは <see cref="TreeLayout"/> で、スター込みで画面に収まるように決める</item>
     /// <item>ボールが当たるたびに、当たった所から飾りの玉が飛んでいき、ツリーのランダムな場所に1つずつ付く
-    /// （置き場所は <see cref="OrnamentPlacer"/> で、重ならないように先に決めておく）</item>
+    /// （置き場所は <see cref="OrnamentPlacer"/> で、重ならないように先に決めておく）。付いた飾りは <see cref="OrnamentSparkle"/> でいつもきらきら光る</item>
     /// <item>数える当たりは 0.5 秒に1回まで（<see cref="CooldownSeconds"/>）。その間の当たりは小さな光だけ出す</item>
     /// <item><see cref="TotalHits"/> 回目（30回目）で、スターがてっぺんに付いて完成</item>
     /// <item>完成したらツリー全体を輝かせ（<see cref="TreeGlow"/>）、<see cref="GlowSeconds"/> 秒たったら次のシーンへ</item>
@@ -36,7 +36,8 @@ namespace WallBurst
         /// <summary>スターの高さ（ツリーの高さに対する割合）。</summary>
         public const float StarSizeRatio = 0.13f;
 
-        private static readonly Color Background = new Color(0.02f, 0.03f, 0.09f, 1f);
+        // 背景：夜空のような紺色（真っ暗にはしない）
+        private static readonly Color Background = new Color(0.11f, 0.15f, 0.3f, 1f);
 
         private readonly List<Vector3> slots = new List<Vector3>();
         private readonly List<GameObject> ornaments = new List<GameObject>();
@@ -72,7 +73,7 @@ namespace WallBurst
             root = new GameObject("クリスマスツリー").transform;
 
             RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
-            RenderSettings.ambientLight = new Color(0.32f, 0.34f, 0.45f);
+            RenderSettings.ambientLight = new Color(0.42f, 0.44f, 0.55f);
             Light key = new GameObject("ライト").AddComponent<Light>();
             key.transform.SetParent(root, false);
             key.type = LightType.Directional;
@@ -212,7 +213,14 @@ namespace WallBurst
             ornament.transform.position = start;
             ornaments.Add(ornament);
             Vector3 scale = prefab.transform.localScale * ornamentScale;
-            FlyTo.Launch(ornament, slot, scale, treeBounds.size.y * 0.15f, 0.7f, null);
+            float diameter = treeBounds.size.y * OrnamentSizeRatio;
+            FlyTo.Launch(ornament, slot, scale, treeBounds.size.y * 0.15f, 0.7f, () =>
+            {
+                if (ornament != null)
+                {
+                    OrnamentSparkle.Attach(ornament, diameter, -viewCamera.transform.forward, random);
+                }
+            });
         }
 
         private void PlaceStar(Vector3 start)
