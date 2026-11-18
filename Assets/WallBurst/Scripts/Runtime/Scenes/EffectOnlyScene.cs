@@ -51,6 +51,12 @@ namespace WallBurst
         }
 
         /// <inheritdoc/>
+        protected override int RemainingBalls()
+        {
+            return Mathf.Max(0, HitLimit - HitTotal);
+        }
+
+        /// <inheritdoc/>
         protected override string DescribeState()
         {
             int remaining = Mathf.Max(0, Mathf.CeilToInt(DurationSeconds - SceneSeconds));

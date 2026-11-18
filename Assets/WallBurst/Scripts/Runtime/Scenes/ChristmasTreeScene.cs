@@ -143,6 +143,12 @@ namespace WallBurst
         }
 
         /// <inheritdoc/>
+        protected override int RemainingBalls()
+        {
+            return Mathf.Max(0, TotalHits - counted);
+        }
+
+        /// <inheritdoc/>
         protected override string DescribeState()
         {
             return "クリスマスツリー：数えた当たり " + counted + " / " + TotalHits + (completed ? "（完成・輝き中）" : string.Empty);

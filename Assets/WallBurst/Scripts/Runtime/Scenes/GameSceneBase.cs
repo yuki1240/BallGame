@@ -14,9 +14,10 @@ namespace WallBurst
     /// <para>係の人用の操作（どのシーンでも同じ）：</para>
     /// <list type="bullet">
     /// <item>Esc キー：キャリブレーションへ戻る</item>
-    /// <item>スペースキー：係の人用の表示（シーン名・当たりの数など）を出す／隠す</item>
+    /// <item>スペースキー：デバッグ表示（終わるまであと何球か・シーン名など）を出す／隠す。始めは出ている</item>
     /// <item>N キー：次のシーンへ進める</item>
-    /// <item>クリック：模擬深度（Kinect なし）のときは、その位置へボールを投げる。Kinect のときは T キーを押しながらクリックで、当たったことにする</item>
+    /// <item>T キー：壁のランダムな位置にボールが当たったことにする（デバッグ用）</item>
+    /// <item>クリック：模擬深度（Kinect なし）のときは、その位置へボールを投げる</item>
     /// </list>
     /// </summary>
     public abstract class GameSceneBase : MonoBehaviour
@@ -24,7 +25,9 @@ namespace WallBurst
         private WallBurstSession session;
         private bool nextRequested;
         private Text operatorText;
+        private Text remainingText;
         private int hitTotal;
+        private readonly System.Random debugRandom = new System.Random();
 
         /// <summary>このシーンで受け取った当たりの数。</summary>
         protected int HitTotal
@@ -77,6 +80,15 @@ namespace WallBurst
         }
 
         /// <summary>
+        /// このシーンが終わるまで、あと何球当てればよいかを返します（デバッグ表示用）。回数で終わらないシーンは -1。
+        /// </summary>
+        /// <returns>あと何球か</returns>
+        protected virtual int RemainingBalls()
+        {
+            return -1;
+        }
+
+        /// <summary>
         /// このシーンを終えて、次のシーンへ進みます（何回呼んでも1回だけ）。
         /// </summary>
         protected void RequestNext()
@@ -115,6 +127,8 @@ namespace WallBurst
             if (operatorText != null && operatorText.enabled)
             {
                 operatorText.text = BuildOperatorText();
+                int remaining = RemainingBalls();
+                remainingText.text = remaining < 0 ? string.Empty : "終わるまで あと " + remaining + " 球";
             }
         }
 
@@ -155,6 +169,14 @@ namespace WallBurst
                 if (keyboard.spaceKey.wasPressedThisFrame && operatorText != null)
                 {
                     operatorText.enabled = !operatorText.enabled;
+                    remainingText.enabled = operatorText.enabled;
+                }
+
+                if (keyboard.tKey.wasPressedThisFrame && session != null)
+                {
+                    // デバッグ用：壁のランダムな位置（端を少しあける）に当たったことにする
+                    Vector2 random = new Vector2(0.05f + (float)debugRandom.NextDouble() * 0.9f, 0.05f + (float)debugRandom.NextDouble() * 0.9f);
+                    session.RaiseHit(new WallHit(random, Vector2.zero, Time.unscaledTime));
                 }
 
                 if (keyboard.nKey.wasPressedThisFrame)
@@ -176,26 +198,27 @@ namespace WallBurst
             {
                 session.ThrowSimulatedBall(wall);
             }
-            else if (keyboard != null && keyboard.tKey.isPressed)
-            {
-                session.RaiseHit(new WallHit(wall, Vector2.zero, Time.unscaledTime));
-            }
         }
 
         private void BuildOperatorOverlay()
         {
-            Canvas canvas = Ui.CreateCanvas("係の人用の表示", 900);
+            Canvas canvas = Ui.CreateCanvas("デバッグ表示", 900);
             operatorText = Ui.CreateText(canvas.transform, string.Empty, 26, TextAnchor.LowerLeft);
             Ui.Place(operatorText.rectTransform, new Vector2(20f, 16f), new Vector2(1400f, 200f));
             operatorText.color = new Color(1f, 1f, 1f, 0.85f);
-            operatorText.enabled = false;
+            remainingText = Ui.CreateText(canvas.transform, string.Empty, 56, TextAnchor.UpperLeft);
+            remainingText.fontStyle = FontStyle.Bold;
+            Ui.Place(remainingText.rectTransform, new Vector2(30f, 960f), new Vector2(1000f, 100f));
+            Outline outline = remainingText.gameObject.AddComponent<Outline>();
+            outline.effectColor = new Color(0f, 0f, 0f, 0.9f);
+            outline.effectDistance = new Vector2(3f, -3f);
         }
 
         private string BuildOperatorText()
         {
             string source = session.IsSimulated ? "模擬（クリックでボール）" : (session.IsReceiving ? "Kinect" : "Kinect（深度が届いていません）");
             return "シーン：" + gameObject.scene.name + "　入力：" + source + "　当たり：" + hitTotal + "　経過：" + Mathf.FloorToInt(SceneSeconds) + "秒\n" +
-                DescribeState() + "\nEsc：キャリブレーションへ　N：次のシーンへ　スペース：この表示を隠す";
+                DescribeState() + "\nEsc：キャリブレーションへ　N：次のシーンへ　T：ランダムな位置に当てる　スペース：この表示を隠す";
         }
     }
 }
