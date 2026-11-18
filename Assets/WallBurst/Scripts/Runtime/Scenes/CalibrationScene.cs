@@ -54,6 +54,11 @@ namespace WallBurst
         private Text ballSizeText;
         private RectTransform buttonPanel;
         private CalibrationPreview preview;
+        private RectifiedDepthView rectified;
+        private GameObject headerObject;
+        private GameObject sideObject;
+        private GameObject legendObject;
+        private GameObject compactPanel;
         private int lastRenderedFrame = -1;
         private BaselineRecorder recorder;
         private float countdownEnd = -1f;
@@ -102,20 +107,24 @@ namespace WallBurst
         private void BuildLayout()
         {
             canvas = Ui.CreateCanvas("キャリブレーション", 0);
+            rectified = new RectifiedDepthView(canvas.transform);
             Image header = Ui.CreatePanel(canvas.transform, "見出し", Ui.PanelColor);
+            headerObject = header.gameObject;
             Ui.Place(header.rectTransform, new Vector2(0f, 850f), new Vector2(1920f, 230f));
             titleText = Ui.CreateText(header.transform, string.Empty, 54, TextAnchor.UpperLeft);
             titleText.fontStyle = FontStyle.Bold;
             Ui.Place(titleText.rectTransform, new Vector2(30f, 140f), new Vector2(1860f, 80f));
-            instructionText = Ui.CreateText(header.transform, string.Empty, 34, TextAnchor.UpperLeft);
-            Ui.Place(instructionText.rectTransform, new Vector2(30f, 10f), new Vector2(1860f, 125f));
+            instructionText = Ui.CreateText(header.transform, string.Empty, 30, TextAnchor.UpperLeft);
+            Ui.Place(instructionText.rectTransform, new Vector2(30f, 4f), new Vector2(1860f, 132f));
 
             preview = new CalibrationPreview(canvas.transform, new Vector2(20f, 110f), new Vector2(1160f, 730f), session.Source.Width, session.Source.Height);
             Text legend = Ui.CreateText(canvas.transform, "灰色：壁や物（明るいほど近い）　黒：深度が取れない　紫：ボールを取りにくい所\n赤：ボール　青：体・手　黄：ちらつき　緑：四隅の台形", 22, TextAnchor.UpperLeft);
             Ui.Place(legend.rectTransform, new Vector2(24f, 40f), new Vector2(1160f, 66f));
+            legendObject = legend.gameObject;
 
             Image side = Ui.CreatePanel(canvas.transform, "操作", Ui.PanelColor);
             Ui.Place(side.rectTransform, new Vector2(1200f, 40f), new Vector2(700f, 800f));
+            sideObject = side.gameObject;
             GameObject panel = new GameObject("ボタン", typeof(RectTransform));
             panel.transform.SetParent(side.transform, false);
             buttonPanel = (RectTransform)panel.transform;
@@ -133,8 +142,42 @@ namespace WallBurst
             outline.effectColor = Color.black;
             outline.effectDistance = new Vector2(4f, -4f);
 
+            BuildCompactPanel();
             CalibrationData data = session.Calibration;
             preview.SetView(data.PreviewRotation, data.PreviewMirror);
+        }
+
+        // 深度を壁に重ねて表示しているときだけ出す、小さな操作パネル（画面の下の真ん中）
+        private void BuildCompactPanel()
+        {
+            Image panel = Ui.CreatePanel(canvas.transform, "重ねて表示中の操作", new Color(0.08f, 0.1f, 0.16f, 0.85f));
+            Ui.Place(panel.rectTransform, new Vector2(360f, 50f), new Vector2(1200f, 190f));
+            Text note = Ui.CreateText(panel.transform, "台形の中の深度を、壁に重ねて映しています。赤＝ボール　青＝体・手　黄＝ちらつき　黒＝深度が取れない\n手を壁に当てると、その位置に写ります。写った位置が手とずれていれば、四隅をやりなおしてください。", 24, TextAnchor.UpperLeft);
+            Ui.Place(note.rectTransform, new Vector2(20f, 100f), new Vector2(1160f, 80f));
+            Button back = Ui.CreateButton(panel.transform, "重ねる表示をやめる", Ui.ButtonColor, () => SetRectified(false));
+            Ui.Place((RectTransform)back.transform, new Vector2(20f, 14f), new Vector2(560f, 76f));
+            Button ok = Ui.CreateButton(panel.transform, "合っている（つぎへ）", Ui.PrimaryColor, () => GoTo(Step.Done));
+            Ui.Place((RectTransform)ok.transform, new Vector2(620f, 14f), new Vector2(560f, 76f));
+            compactPanel = panel.gameObject;
+            compactPanel.SetActive(false);
+        }
+
+        // 深度を壁に重ねる表示に切り替える（ふだんの画面を隠す）
+        private void SetRectified(bool on)
+        {
+            if (rectified == null)
+            {
+                return;
+            }
+
+            on = on && session.IsReady;
+            rectified.Visible = on;
+            headerObject.SetActive(!on);
+            sideObject.SetActive(!on);
+            legendObject.SetActive(!on);
+            preview.SetVisible(!on);
+            compactPanel.SetActive(on);
+            lastRenderedFrame = -1;
         }
 
         private void BuildSettings(Transform parent)
@@ -168,12 +211,14 @@ namespace WallBurst
                 Destroy(buttonPanel.GetChild(i).gameObject);
             }
 
+            // ボタンが多いときは、少しずつ低くして、決まった高さ（480）に収める
+            float step = Mathf.Min(100f, 480f / Mathf.Max(1, specs.Length));
             float y = 480f;
             foreach (ButtonSpec spec in specs)
             {
-                y -= 100f;
+                y -= step;
                 Button button = Ui.CreateButton(buttonPanel, spec.Label, spec.Color, spec.Action);
-                Ui.Place((RectTransform)button.transform, new Vector2(0f, y), new Vector2(660f, 88f));
+                Ui.Place((RectTransform)button.transform, new Vector2(0f, y), new Vector2(660f, step - 12f));
                 button.interactable = spec.Enabled;
             }
         }
@@ -199,6 +244,7 @@ namespace WallBurst
         // ---------------------------------------------------------------
         private void GoTo(Step next)
         {
+            SetRectified(false);
             step = next;
             bigText.text = string.Empty;
             resultMessage = string.Empty;
@@ -238,9 +284,10 @@ namespace WallBurst
                     testHits = 0;
                     session.ResetTracking();
                     SetTitle(4, "試し投げ");
-                    SetInstruction("壁にボールを何回か投げてください。当たった所に、黄色い輪が出ます。\n輪がボールの当たった所に出ていれば「合っている」を押してください。" + (session.IsSimulated ? "\n（模擬：画面をクリックするとボールが飛びます。H キーを押している間、マウスの所に「壁を触る手」が出ます）" : string.Empty));
+                    SetInstruction("壁にボールを何回か投げてください。当たった所に、黄色い輪が出ます。\n輪がボールの当たった所に出ていれば「合っている」を押してください。\n輪が出ないときは「深度を壁に重ねて表示」で、ボールが深度に写っているか確かめられます。" + (session.IsSimulated ? "\n（模擬：画面をクリックするとボールが飛びます。H キーを押している間、マウスの所に「壁を触る手」が出ます）" : string.Empty));
                     SetButtons(
                         new ButtonSpec("合っている（つぎへ）", Ui.PrimaryColor, () => GoTo(Step.Done)),
+                        new ButtonSpec("深度を壁に重ねて表示", Ui.ButtonColor, () => SetRectified(true)),
                         new ButtonSpec("左右が逆になっている", Ui.ButtonColor, SwapLeftRight),
                         new ButtonSpec("上下が逆になっている", Ui.ButtonColor, SwapTopBottom),
                         new ButtonSpec("四隅をやりなおす", Ui.ButtonColor, () => GoTo(Step.Corners)));
@@ -340,6 +387,7 @@ namespace WallBurst
             session.OpenSource(kind);
             session.StartNewCalibration();
             preview = null;
+            rectified = null;
             Destroy(canvas.gameObject);
             BuildLayout();
             GoTo(Step.Sensor);
@@ -513,6 +561,12 @@ namespace WallBurst
             }
 
             lastRenderedFrame = session.FrameCount;
+            if (rectified != null && rectified.Visible)
+            {
+                rectified.Render(session.LatestFrame, session.Detector);
+                return;
+            }
+
             IList<Vector2> corners = step == Step.Corners ? (IList<Vector2>)tapped : session.Calibration.Corners;
             preview.Render(session.LatestFrame, session.Calibration, session.IsReady ? session.Detector : null, corners);
             preview.ShowMarkers(corners);
@@ -528,6 +582,12 @@ namespace WallBurst
 
         private void HandlePointer()
         {
+            Keyboard escapeKeyboard = Keyboard.current;
+            if (escapeKeyboard != null && escapeKeyboard.escapeKey.wasPressedThisFrame && rectified != null && rectified.Visible)
+            {
+                SetRectified(false);
+            }
+
             Mouse mouse = Mouse.current;
             if (mouse == null)
             {

@@ -81,6 +81,22 @@ namespace WallBurst
         }
 
         /// <summary>
+        /// 見本を出したり隠したりします（深度を壁に重ねて表示するときは隠す）。
+        /// </summary>
+        /// <param name="visible">出すとき true</param>
+        public void SetVisible(bool visible)
+        {
+            area.gameObject.SetActive(visible);
+            if (!visible)
+            {
+                foreach (Text marker in markers)
+                {
+                    marker.enabled = false;
+                }
+            }
+        }
+
+        /// <summary>
         /// 表示の向きを変えます。
         /// </summary>
         /// <param name="quarterTurns">90°ずつの回転（0〜3）</param>
@@ -153,17 +169,8 @@ namespace WallBurst
                 for (int x = 0; x < width; x++)
                 {
                     int i = y * width + x;
-                    Color32 color = Gray(depth[i]);
-                    if (classes != null && classes[i] != HitDetector.ClassNone)
-                    {
-                        color = classes[i] == HitDetector.ClassBall ? Red : classes[i] == HitDetector.ClassBody ? Blue : Yellow;
-                    }
-                    else if (blind != null ? blind[i] : (baseline != null && baseline[i] == 0 && depth[i] == 0))
-                    {
-                        color = Color32.Lerp(color, Purple, 0.6f);
-                    }
-
-                    pixels[row + x] = color;
+                    bool isBlind = blind != null ? blind[i] : (baseline != null && baseline[i] == 0 && depth[i] == 0);
+                    pixels[row + x] = PixelColor(depth[i], classes != null ? classes[i] : HitDetector.ClassNone, isBlind);
                 }
             }
 
@@ -198,6 +205,24 @@ namespace WallBurst
                 Vector3 local = new Vector3((lx - 0.5f) * rect.rect.width, (ly - 0.5f) * rect.rect.height, 0f);
                 markers[i].rectTransform.position = rect.TransformPoint(local) + new Vector3(0f, 24f, 0f);
             }
+        }
+
+        /// <summary>
+        /// 1つの画素の色を返します（深度の灰色に、見分けの結果の色を重ねる）。
+        /// </summary>
+        /// <param name="depth">深度（mm）</param>
+        /// <param name="kind">見分けの結果</param>
+        /// <param name="blind">ボールを取りにくい所か</param>
+        /// <returns>色</returns>
+        public static Color32 PixelColor(ushort depth, byte kind, bool blind)
+        {
+            if (kind != HitDetector.ClassNone)
+            {
+                return kind == HitDetector.ClassBall ? Red : kind == HitDetector.ClassBody ? Blue : Yellow;
+            }
+
+            Color32 color = Gray(depth);
+            return blind ? Color32.Lerp(color, Purple, 0.6f) : color;
         }
 
         private static Color32 Gray(ushort depth)

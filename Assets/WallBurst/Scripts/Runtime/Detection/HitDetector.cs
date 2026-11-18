@@ -110,6 +110,18 @@ namespace WallBurst
             get { return mapping != null; }
         }
 
+        /// <summary>深度画像の幅。</summary>
+        public int Width
+        {
+            get { return width; }
+        }
+
+        /// <summary>深度画像の高さ。</summary>
+        public int Height
+        {
+            get { return height; }
+        }
+
         /// <summary>深度画像と壁座標の対応付け。</summary>
         public WallMapping Mapping
         {
