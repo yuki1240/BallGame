@@ -17,10 +17,10 @@ namespace WallBurst
         public const ushort UnstableNoise = ushort.MaxValue;
 
         /// <summary>ボールの直径の初期値（mm）。</summary>
-        public const int DefaultBallDiameterMm = 200;
+        public const int DefaultBallDiameterMm = 70;
 
         /// <summary>ボールの直径の最小（mm）。</summary>
-        public const int MinBallDiameterMm = 50;
+        public const int MinBallDiameterMm = 40;
 
         /// <summary>ボールの直径の最大（mm）。</summary>
         public const int MaxBallDiameterMm = 400;

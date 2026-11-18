@@ -9,6 +9,9 @@ namespace WallBurst.Tests
     /// </summary>
     public sealed class HitDetectorTests
     {
+        // 使うボールの直径（mm）。校正の初期値と同じ 7cm
+        private const float Ball = CalibrationData.DefaultBallDiameterMm;
+
         private SimulatedDepthSource source;
         private HitDetector detector;
         private ushort[] frame;
@@ -44,7 +47,7 @@ namespace WallBurst.Tests
         [Test]
         public void OneBall_GivesOneHitAtTheRightPlace()
         {
-            source.ThrowBall(detector.Mapping.WallToPoint(new Vector2(0.5f, 0.5f)), 200f);
+            source.ThrowBall(detector.Mapping.WallToPoint(new Vector2(0.5f, 0.5f)), Ball);
             List<WallHit> hits = Run(20);
             Assert.That(hits.Count, Is.EqualTo(1));
             Assert.That(Vector2.Distance(hits[0].Wall, new Vector2(0.5f, 0.5f)), Is.LessThan(0.06f));
@@ -53,8 +56,8 @@ namespace WallBurst.Tests
         [Test]
         public void TwoBallsAtOnce_GiveTwoHits()
         {
-            source.ThrowBall(detector.Mapping.WallToPoint(new Vector2(0.2f, 0.4f)), 200f);
-            source.ThrowBall(detector.Mapping.WallToPoint(new Vector2(0.8f, 0.6f)), 200f);
+            source.ThrowBall(detector.Mapping.WallToPoint(new Vector2(0.2f, 0.4f)), Ball);
+            source.ThrowBall(detector.Mapping.WallToPoint(new Vector2(0.8f, 0.6f)), Ball);
             List<WallHit> hits = Run(20);
             Assert.That(hits.Count, Is.EqualTo(2));
         }
@@ -72,9 +75,23 @@ namespace WallBurst.Tests
         {
             source.SetHand(true, detector.Mapping.WallToPoint(new Vector2(0.25f, 0.5f)));
             Run(5);
-            source.ThrowBall(detector.Mapping.WallToPoint(new Vector2(0.75f, 0.5f)), 200f);
+            source.ThrowBall(detector.Mapping.WallToPoint(new Vector2(0.75f, 0.5f)), Ball);
             List<WallHit> hits = Run(20);
             Assert.That(hits.Count, Is.EqualTo(1));
+        }
+
+        [Test]
+        public void SixBallsAtOnceWithAHand_GiveSixHits()
+        {
+            // 6人が同時に投げ、1人は壁を手で触っている
+            source.SetHand(true, detector.Mapping.WallToPoint(new Vector2(0.3f, 0.5f)));
+            Vector2[] places = { new Vector2(0.1f, 0.3f), new Vector2(0.5f, 0.3f), new Vector2(0.9f, 0.3f), new Vector2(0.1f, 0.75f), new Vector2(0.5f, 0.75f), new Vector2(0.9f, 0.75f) };
+            foreach (Vector2 place in places)
+            {
+                source.ThrowBall(detector.Mapping.WallToPoint(place), Ball);
+            }
+
+            Assert.That(Run(20).Count, Is.EqualTo(6));
         }
 
         [Test]

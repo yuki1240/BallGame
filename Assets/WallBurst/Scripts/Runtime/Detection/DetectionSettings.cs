@@ -78,7 +78,7 @@ namespace WallBurst
         /// <summary>跳ね返りとみなす距離（mm）。</summary>
         public float BounceRadiusMm
         {
-            get { return Mathf.Max(300f, BallDiameterMm * 1.5f); }
+            get { return Mathf.Max(200f, BallDiameterMm * 1.5f); }
         }
     }
 }
