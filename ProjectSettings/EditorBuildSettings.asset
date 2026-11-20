@@ -14,23 +14,5 @@ EditorBuildSettings:
   - enabled: 1
     path: Assets/WallBurst/Scenes/WB_ChristmasTree.unity
     guid: 85beb13d48104e51acdea16654708b1c
-  - enabled: 0
-    path: Assets/Scenes/Calibration.unity
-    guid: 6e3b3204d3a74cb7bdc56ffa5c9b2015
-  - enabled: 0
-    path: Assets/Scenes/Christmas.unity
-    guid: 1727343dcea64f188572427d2dbac367
-  - enabled: 0
-    path: Assets/Scenes/Game.unity
-    guid: 7a93f45d493e46dd98ebb6ce7e8bec1b
-  - enabled: 0
-    path: Assets/Scenes/Autumn.unity
-    guid: 5754d65208804b6287a9f53f283d7de5
-  - enabled: 0
-    path: Assets/Scenes/Bubble.unity
-    guid: de7bb771143540a4924fc8f7bbe56e82
-  - enabled: 0
-    path: Assets/Polyart/PolyartStudio/Christmas/Scenes/PolyartChristmasScene.unity
-    guid: 575b8766a58913c44bf29add476b7814
   m_configObjects:
     com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}
