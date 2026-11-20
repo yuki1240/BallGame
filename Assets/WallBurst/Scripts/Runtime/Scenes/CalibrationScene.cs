@@ -11,8 +11,9 @@ namespace WallBurst
     /// <list type="number">
     /// <item>Kinect の確認：つながっているかを見る</item>
     /// <item>壁を空にする：人と物をどけて、壁の「基準の深度」を録る</item>
-    /// <item>四隅をタップ：深度の見本の上で、投影範囲の四隅（壁の端）を順にタップする。台形から射影変換を作る</item>
+    /// <item>四隅をタップ：深度の見本の上で、投影範囲の四隅（壁の端）を順にタップする。深度を使って、台形を壁の上の長方形に直す</item>
     /// <item>試し投げ：ボールを投げて、当たった所に印が出るか確かめる</item>
+    /// <item>（試し投げで）Kinect を置いた側（左・右）を選ぶ：Kinect に近い側が画面の同じ側になる（左右反転）</item>
     /// <item>完了：保存して、ゲームを始める</item>
     /// </list>
     /// 前回の設定があるときは、最初に「前回の設定ではじめる」を出します。
@@ -285,12 +286,7 @@ namespace WallBurst
                     session.ResetTracking();
                     SetTitle(4, "試し投げ");
                     SetInstruction("壁にボールを何回か投げてください。当たった所に、黄色い輪が出ます。\n輪がボールの当たった所に出ていれば「合っている」を押してください。\n輪が出ないときは「深度を壁に重ねて表示」で、ボールが深度に写っているか確かめられます。" + (session.IsSimulated ? "\n（模擬：画面をクリックするとボールが飛びます。H キーを押している間、マウスの所に「壁を触る手」が出ます）" : string.Empty));
-                    SetButtons(
-                        new ButtonSpec("合っている（つぎへ）", Ui.PrimaryColor, () => GoTo(Step.Done)),
-                        new ButtonSpec("深度を壁に重ねて表示", Ui.ButtonColor, () => SetRectified(true)),
-                        new ButtonSpec("左右が逆になっている", Ui.ButtonColor, SwapLeftRight),
-                        new ButtonSpec("上下が逆になっている", Ui.ButtonColor, SwapTopBottom),
-                        new ButtonSpec("四隅をやりなおす", Ui.ButtonColor, () => GoTo(Step.Corners)));
+                    ShowTestThrowButtons();
                     break;
                 case Step.Done:
                     session.SaveCalibration();
@@ -351,7 +347,7 @@ namespace WallBurst
             if (session.IsReady)
             {
                 int blind = Mathf.RoundToInt(session.Detector.BlindRatio * 100f);
-                SetInstruction("台形ができました。射影変換で、Kinect の位置とプロジェクターの位置を合わせました。\n台形の中でボールを取りにくい所（紫）：約 " + blind + "%" + (blind > 30 ? "　※多いときは、Kinect の向きを少し壁側に向けて、基準から録りなおしてください。" : string.Empty));
+                SetInstruction("台形ができました。深度を使って、台形を壁の上の長方形に直しました。\n台形の中でボールを取りにくい所（紫）：約 " + blind + "%" + (blind > 30 ? "　※多いときは、Kinect の向きを少し壁側に向けて、基準から録りなおしてください。" : string.Empty) + DescribeWall());
                 SetButtons(
                     new ButtonSpec("つぎへ（試し投げ）", Ui.PrimaryColor, () => GoTo(Step.TestThrow)),
                     new ButtonSpec("1つもどす", Ui.ButtonColor, UndoCorner),
@@ -489,10 +485,50 @@ namespace WallBurst
             ShowCornerStep();
         }
 
-        private void SwapLeftRight()
+        private void ShowTestThrowButtons()
         {
-            session.Calibration.SwapLeftRight();
-            ReapplyCorners("左右を入れ替えました。もう一度投げて確かめてください。");
+            SetButtons(
+                new ButtonSpec("合っている（つぎへ）", Ui.PrimaryColor, () => GoTo(Step.Done)),
+                new ButtonSpec("深度を壁に重ねて表示", Ui.ButtonColor, () => SetRectified(true)),
+                new ButtonSpec(KinectSideLabel(), Ui.ButtonColor, ToggleKinectSide),
+                new ButtonSpec("上下が逆になっている", Ui.ButtonColor, SwapTopBottom),
+                new ButtonSpec("四隅をやりなおす", Ui.ButtonColor, () => GoTo(Step.Corners)));
+        }
+
+        private string KinectSideLabel()
+        {
+            return session.Calibration.KinectOnRight ? "Kinect の位置：右（押すと左に）" : "Kinect の位置：左（押すと右に）";
+        }
+
+        // Kinect を置いた側（左・右）を切り替える。Kinect に近い側が、画面の同じ側になる（左右反転）。四隅と基準はそのまま使う
+        private void ToggleKinectSide()
+        {
+            CalibrationData data = session.Calibration;
+            data.KinectOnRight = !data.KinectOnRight;
+            ReapplyCorners("Kinect の位置を「" + (data.KinectOnRight ? "右" : "左") + "」にしました（左右を入れ替えました）。もう一度投げて確かめてください。");
+            if (session.IsReady)
+            {
+                session.SaveCalibration();
+            }
+
+            ShowTestThrowButtons();
+        }
+
+        // 投影面の大きさと Kinect の位置の説明（四隅がそろったときに出す）
+        private string DescribeWall()
+        {
+            if (!session.IsReady)
+            {
+                return string.Empty;
+            }
+
+            WallMapping mapping = session.Detector.Mapping;
+            string side = session.Calibration.KinectOnRight ? "右" : "左";
+            string size = "投影面の大きさ（深度から測った値）：幅 約 " + Mathf.RoundToInt(mapping.WidthMm / 10f) + "cm × 高さ 約 " + Mathf.RoundToInt(mapping.HeightMm / 10f) + "cm。実物と大きく違うときは、四隅をやりなおしてください。";
+            string near = mapping.NearSideDetected
+                ? "Kinect の位置：" + side + "（Kinect に近い側を画面の" + side + "にしました）"
+                : "Kinect の位置：" + side + "（深度から近い側が分からなかったので、タップした順番どおりにしました）";
+            return "\n" + size + "\n" + near;
         }
 
         private void SwapTopBottom()

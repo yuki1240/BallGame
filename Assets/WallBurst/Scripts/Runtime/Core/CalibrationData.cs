@@ -8,7 +8,7 @@ namespace WallBurst
     /// <item>基準の深度：人がいないときの深度（画素ごと、mm、0 は取れていない）</item>
     /// <item>揺れ幅：基準を録る間の深度の揺れ（mm）。<see cref="UnstableNoise"/> は深度が 0 になったことがある不安定な画素</item>
     /// <item>四隅：深度画像の上でタップした、投影範囲の四隅（左上・右上・右下・左下、0〜1、上端が 0）</item>
-    /// <item>設定：ボールの大きさなど</item>
+    /// <item>設定：ボールの大きさ、Kinect を置いた側（左・右）など</item>
     /// </list>
     /// </summary>
     public sealed class CalibrationData
@@ -52,6 +52,12 @@ namespace WallBurst
         /// <summary>プレビューを左右反転するか（表示だけ）。</summary>
         public bool PreviewMirror;
 
+        /// <summary>
+        /// Kinect を投影面の右側に置いたとき true（初期値は左側）。
+        /// Kinect に近い側が、画面の同じ側（左に置いたら画面の左）になるようにします。
+        /// </summary>
+        public bool KinectOnRight;
+
         /// <summary>基準を録り終えたか。</summary>
         public bool HasBaseline
         {
@@ -76,19 +82,6 @@ namespace WallBurst
         public void ClearCorners()
         {
             Corners = null;
-        }
-
-        /// <summary>
-        /// 四隅の順番を入れ替えて、左右を逆にします（試し投げで左右が逆だったとき用）。
-        /// </summary>
-        public void SwapLeftRight()
-        {
-            if (!HasCorners)
-            {
-                return;
-            }
-
-            Corners = new[] { Corners[1], Corners[0], Corners[3], Corners[2] };
         }
 
         /// <summary>

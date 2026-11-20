@@ -12,7 +12,10 @@ namespace WallBurst
     {
         private const string FileName = "wallburst_calibration.bin";
         private const int Magic = 0x31435357; // "WSC1"
-        private const int Version = 1;
+        private const int Version = 2;
+
+        // Version 1 のファイル（Kinect を置いた側がない）も読めるようにする
+        private const int OldestReadableVersion = 1;
 
         /// <summary>保存先のパス。</summary>
         public static string FilePath
@@ -120,6 +123,7 @@ namespace WallBurst
                 }
             }
 
+            writer.Write(data.KinectOnRight);
             writer.Flush();
         }
 
@@ -131,7 +135,13 @@ namespace WallBurst
         public static CalibrationData Read(Stream stream)
         {
             BinaryReader reader = new BinaryReader(stream);
-            if (reader.ReadInt32() != Magic || reader.ReadInt32() != Version)
+            if (reader.ReadInt32() != Magic)
+            {
+                return null;
+            }
+
+            int version = reader.ReadInt32();
+            if (version < OldestReadableVersion || version > Version)
             {
                 return null;
             }
@@ -152,6 +162,11 @@ namespace WallBurst
                 {
                     data.Corners[i] = new Vector2(reader.ReadSingle(), reader.ReadSingle());
                 }
+            }
+
+            if (version >= 2)
+            {
+                data.KinectOnRight = reader.ReadBoolean();
             }
 
             return data;
