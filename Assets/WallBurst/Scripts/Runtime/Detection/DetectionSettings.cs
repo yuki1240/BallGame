@@ -24,7 +24,7 @@ namespace WallBurst
         public float DepthJumpMm = 90f;
 
         /// <summary>塊として扱う最小の画素数（これより小さいのはちらつき）。</summary>
-        public int MinPixels = 5;
+        public int MinPixels = 8;
 
         /// <summary>同じボールとみなす、前のフレームからの移動の上限（mm）。</summary>
         public float TrackMatchMm = 450f;
@@ -34,6 +34,9 @@ namespace WallBurst
 
         /// <summary>壁に近づく（または離れる）動きとみなす距離（mm）。</summary>
         public float ApproachMm = 80f;
+
+        /// <summary>当たりにする前に、ボールが壁から離れた所で見えていなければならないフレーム数。</summary>
+        public int MinApproachFrames = 2;
 
         /// <summary>壁に触れてから、離れるのを待つフレーム数。</summary>
         public int LeaveWaitFrames = 8;
@@ -60,7 +63,7 @@ namespace WallBurst
         /// <summary>ボールとみなす大きさ（見えている面積）の下限（mm²）。</summary>
         public float MinBallAreaMm2
         {
-            get { return BallAreaMm2 * 0.15f; }
+            get { return BallAreaMm2 * 0.3f; }
         }
 
         /// <summary>ボールとみなす大きさ（見えている面積）の上限（mm²）。これより大きいのは体や手。</summary>

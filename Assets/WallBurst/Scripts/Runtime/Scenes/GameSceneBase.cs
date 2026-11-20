@@ -218,7 +218,7 @@ namespace WallBurst
         {
             string source = session.IsSimulated ? "模擬（クリックでボール）" : (session.IsReceiving ? "Kinect" : "Kinect（深度が届いていません）");
             return "シーン：" + gameObject.scene.name + "　入力：" + source + "　当たり：" + hitTotal + "　経過：" + Mathf.FloorToInt(SceneSeconds) + "秒\n" +
-                DescribeState() + "\nEsc：キャリブレーションへ　N：次のシーンへ　T：ランダムな位置に当てる　スペース：この表示を隠す";
+                DescribeState() + "　" + RectifiedHitDetector.ModeLabel + "\nEsc：キャリブレーションへ　N：次のシーンへ　T：ランダムな位置に当てる　スペース：この表示を隠す　F8：判定の A／B を切り替え";
         }
     }
 }

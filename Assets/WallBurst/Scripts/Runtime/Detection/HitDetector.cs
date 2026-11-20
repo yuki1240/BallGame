@@ -332,6 +332,9 @@ namespace WallBurst
                 }
 
                 float extent = (max - min).magnitude;
+
+                // 壁にいちばん近い高さ：縁のノイズ（飛び画素）に引っぱられないよう、低い方から 20% の所の値を使う
+                minHeight = LowHeight(count);
                 byte kind;
                 if (count < settings.MinPixels)
                 {
@@ -377,6 +380,25 @@ namespace WallBurst
                 candidates.Add(candidate);
             }
         }
+
+        // 塊の画素の「壁から出ている高さ」の、低い方から 20% の値
+        private float LowHeight(int count)
+        {
+            if (sortBuffer == null || sortBuffer.Length < count)
+            {
+                sortBuffer = new float[count];
+            }
+
+            for (int k = 0; k < count; k++)
+            {
+                sortBuffer[k] = heights[pixelList[k]];
+            }
+
+            System.Array.Sort(sortBuffer, 0, count);
+            return sortBuffer[Mathf.Min(count - 1, count / 5)];
+        }
+
+        private float[] sortBuffer;
 
         // start からつながっている「変化した画素」を集め、changed を消していく（集めた数を返す）
         private int CollectBlob(int start, ushort[] depth)
@@ -462,12 +484,7 @@ namespace WallBurst
                     continue;
                 }
 
-                // 壁で見え始めてすぐ見えなくなった物は、速いボールとして当たりにする
-                if (track.Pending && !track.Emitted && track.Seen <= 3)
-                {
-                    Emit(track.PendingPoint, track.PendingImage, timeSeconds);
-                }
-
+                // 壁の近くで見え始めてすぐ消えた物は、ちらつきのことが多いので当たりにしない（判定を厳しくする）
                 tracks.RemoveAt(i);
             }
 
@@ -539,7 +556,7 @@ namespace WallBurst
             bool touching = candidate.MinHeight <= contact;
             if (track.Pending)
             {
-                if (candidate.MinHeight >= track.PendingHeight + settings.ApproachMm)
+                if (candidate.MinHeight >= track.PendingHeight + settings.ApproachMm && track.Seen >= settings.MinApproachFrames + 1)
                 {
                     // 壁に触れてから離れた：触れた所で当たり
                     Emit(track.PendingPoint, track.PendingImage, timeSeconds);
@@ -570,7 +587,7 @@ namespace WallBurst
                 farthest = Mathf.Max(farthest, h);
             }
 
-            if (track.History.Count > 0 && farthest - candidate.MinHeight >= settings.ApproachMm)
+            if (track.History.Count >= settings.MinApproachFrames && farthest - candidate.MinHeight >= settings.ApproachMm)
             {
                 // 遠くから飛んできて壁に触れた：この瞬間で当たり
                 Emit(candidate.ContactPoint, candidate.ContactImage, timeSeconds);
@@ -594,7 +611,7 @@ namespace WallBurst
         private void Emit(Vector3 point, Vector2 image, float timeSeconds)
         {
             Vector2 wall = mapping.PointToWall(point);
-            const float margin = 0.03f;
+            const float margin = 0f;
             if (wall.x < -margin || wall.x > 1f + margin || wall.y < -margin || wall.y > 1f + margin)
             {
                 // 投影範囲の外

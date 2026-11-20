@@ -631,6 +631,11 @@ namespace WallBurst
             }
 
             Vector2 screen = mouse.position.ReadValue();
+            if (preview != null)
+            {
+                preview.UpdateMagnifier(screen, step == Step.Corners && tapped.Count < 4);
+            }
+
             Keyboard keyboard = Keyboard.current;
             if (step == Step.TestThrow && session.IsSimulated && session.IsReady)
             {
@@ -646,7 +651,7 @@ namespace WallBurst
             if (step == Step.Corners)
             {
                 Vector2 image01;
-                if (preview.TryScreenToImage(screen, out image01))
+                if (preview != null && preview.TryScreenToImage(screen, out image01))
                 {
                     AddCorner(image01);
                 }

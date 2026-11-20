@@ -19,6 +19,9 @@ namespace WallBurst
         private ushort[] frame;
         private CalibrationData calibration;
         private HitDetector detector;
+
+        // A 方式（長方形に直してから判定）。消すときは「A 方式」と書いた所をまとめて消す
+        private RectifiedHitDetector rectifiedDetector;
         private int frameCount;
         private float lastFrameTime = -1f;
         private string configureError = string.Empty;
@@ -167,7 +170,11 @@ namespace WallBurst
         public bool ApplyCalibration()
         {
             // 足りないときも Configure を呼んで、前の校正のままにならないようにする
-            return detector.Configure(calibration, out configureError);
+            bool ready = detector.Configure(calibration, out configureError);
+
+            // A 方式
+            rectifiedDetector = ready ? RectifiedHitDetector.Create(detector, calibration) : null;
+            return ready;
         }
 
         /// <summary>
@@ -186,6 +193,12 @@ namespace WallBurst
             if (detector != null)
             {
                 detector.ResetTracking();
+            }
+
+            // A 方式
+            if (rectifiedDetector != null)
+            {
+                rectifiedDetector.ResetTracking();
             }
         }
 
@@ -251,6 +264,15 @@ namespace WallBurst
 
         private void Update()
         {
+            // A 方式：F8 キーで A と B を切り替える
+            UnityEngine.InputSystem.Keyboard keyboard = UnityEngine.InputSystem.Keyboard.current;
+            if (keyboard != null && keyboard.f8Key.wasPressedThisFrame)
+            {
+                RectifiedHitDetector.Enabled = !RectifiedHitDetector.Enabled;
+                ResetTracking();
+                Debug.Log("[WallBurst] " + RectifiedHitDetector.ModeLabel);
+            }
+
             if (source == null || !source.TryGetLatestFrame(frame))
             {
                 return;
@@ -263,7 +285,8 @@ namespace WallBurst
                 return;
             }
 
-            foreach (WallHit hit in detector.Process(frame, Time.unscaledTime))
+            bool useA = RectifiedHitDetector.Enabled && rectifiedDetector != null;
+            foreach (WallHit hit in useA ? rectifiedDetector.Process(frame, Time.unscaledTime) : detector.Process(frame, Time.unscaledTime))
             {
                 RaiseHit(hit);
             }

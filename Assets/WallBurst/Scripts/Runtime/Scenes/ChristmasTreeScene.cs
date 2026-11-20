@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.InputSystem;
 using UnityEngine.UI;
 
 namespace WallBurst
@@ -11,9 +12,10 @@ namespace WallBurst
     /// 大きさは <see cref="TreeLayout"/> で、スター込みで画面に収まるように決める</item>
     /// <item>ボールが当たるたびに、当たった所から飾りの玉が飛んでいき、ツリーのランダムな場所に1つずつ付く
     /// （置き場所は <see cref="OrnamentPlacer"/> で、重ならないように先に決めておく）。飾りは丸い玉のほか、リース・プレゼントの箱・ベル・星・キャンディケーン（<see cref="OrnamentShapes"/>）。付いた飾りは <see cref="OrnamentSparkle"/> でいつもきらきら光る</item>
-    /// <item>数える当たりは 0.5 秒に1回まで（<see cref="CooldownSeconds"/>）。その間の当たりは小さな光だけ出す</item>
+    /// <item>当たりは 1 秒に1回まで（<see cref="CooldownSeconds"/>）。その間の当たりでは、エフェクトも飾りも出さない</item>
     /// <item><see cref="TotalHits"/> 回目（30回目）で、スターがてっぺんに付いて完成</item>
     /// <item>完成したらツリー全体を輝かせ（<see cref="TreeGlow"/>）、<see cref="GlowSeconds"/> 秒たったら次のシーンへ</item>
+    /// <item>シーンのあいだ、いつも画面全体に雪が降る（<see cref="SnowFall"/>）</item>
     /// </list>
     /// </summary>
     public sealed class ChristmasTreeScene : GameSceneBase
@@ -21,8 +23,8 @@ namespace WallBurst
         /// <summary>完成までの当たりの数（最後の1回でスターが付く）。</summary>
         public const int TotalHits = 30;
 
-        /// <summary>数える当たりの間隔（秒）。続けて当たりすぎないようにする。</summary>
-        public const float CooldownSeconds = 0.5f;
+        /// <summary>当たりの間隔（秒）。前の当たりからこの時間の間は、エフェクトも飾りも出さない。</summary>
+        public const float CooldownSeconds = 1.0f;
 
         /// <summary>輝いた状態で待つ秒数。</summary>
         public const float GlowSeconds = 10f;
@@ -69,6 +71,8 @@ namespace WallBurst
         private int lastScreenWidth;
         private int lastScreenHeight;
         private Text errorText;
+        private TreeGlow glow;
+        private Color ambientStart;
 
         /// <inheritdoc/>
         protected override void BuildScene()
@@ -78,10 +82,14 @@ namespace WallBurst
             viewCamera.nearClipPlane = 0.05f;
             viewCamera.farClipPlane = 500f;
             effects = EffectSpawner.Create(10);
+
+            // いつも雪を降らせる（エフェクトより下、ツリーより前）
+            SnowFall.Create(5);
             root = new GameObject("クリスマスツリー").transform;
 
             RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
             RenderSettings.ambientLight = new Color(0.42f, 0.44f, 0.55f);
+            ambientStart = RenderSettings.ambientLight;
             Light key = new GameObject("ライト").AddComponent<Light>();
             key.transform.SetParent(root, false);
             key.type = LightType.Directional;
@@ -103,20 +111,20 @@ namespace WallBurst
         /// <inheritdoc/>
         protected override void OnWallHit(Vector2 screenPosition)
         {
-            if (star == null || completed)
+            // 前の当たりから間もない当たり（跳ね返り・続けての当たり）は、エフェクトも飾りも出さない
+            if (Time.time - lastCountedTime < CooldownSeconds)
+            {
+                return;
+            }
+
+            lastCountedTime = Time.time;
+            if (star == null || completed || counted >= TotalHits)
             {
                 // 完成後や準備できていないときは、数えずに光だけ
                 effects.Spawn(screenPosition, 0.6f);
                 return;
             }
 
-            if (Time.time - lastCountedTime < CooldownSeconds || counted >= TotalHits)
-            {
-                effects.Spawn(screenPosition, new Color(1f, 1f, 0.8f), 0.45f, 0.6f);
-                return;
-            }
-
-            lastCountedTime = Time.time;
             counted++;
             effects.Spawn(screenPosition);
             Vector3 start = ScreenToWorld(screenPosition);
@@ -134,6 +142,12 @@ namespace WallBurst
         protected override void Update()
         {
             base.Update();
+            Keyboard keyboard = Keyboard.current;
+            if (keyboard != null && keyboard.rKey.wasPressedThisFrame)
+            {
+                ResetTree();
+            }
+
             if (viewCamera != null && star != null && (Screen.width != lastScreenWidth || Screen.height != lastScreenHeight))
             {
                 FitCamera();
@@ -159,7 +173,7 @@ namespace WallBurst
         /// <inheritdoc/>
         protected override string DescribeState()
         {
-            return "クリスマスツリー：数えた当たり " + counted + " / " + TotalHits + (completed ? "（完成・輝き中）" : string.Empty);
+            return "クリスマスツリー：数えた当たり " + counted + " / " + TotalHits + (completed ? "（完成・輝き中）" : string.Empty) + "　R：回数を 0 に戻す";
         }
 
         private void BuildTree()
@@ -310,9 +324,51 @@ namespace WallBurst
         {
             completed = true;
             completedAt = Time.time;
-            TreeGlow glow = new GameObject("輝き").AddComponent<TreeGlow>();
+            glow = new GameObject("輝き").AddComponent<TreeGlow>();
             glow.transform.SetParent(root, false);
             glow.Begin(ornaments, star, fullBounds, cone, random);
+        }
+
+        // デバッグ用（R キー）：数えた回数を 0 に戻し、飾り・スター・輝きを消して最初の状態にする
+        private void ResetTree()
+        {
+            if (star == null)
+            {
+                return;
+            }
+
+            foreach (GameObject ornament in ornaments)
+            {
+                if (ornament != null)
+                {
+                    Destroy(ornament);
+                }
+            }
+
+            ornaments.Clear();
+            if (glow != null)
+            {
+                Destroy(glow.gameObject);
+                glow = null;
+            }
+
+            RenderSettings.ambientLight = ambientStart;
+
+            // スターは飛んでいる途中や輝きの途中のこともあるので、作り直す
+            Destroy(star);
+            star = Instantiate(assets.starPrefab, root);
+            star.name = "スター";
+            star.transform.position = starPosition;
+            star.transform.localScale = starScale;
+            star.SetActive(false);
+
+            slots.Clear();
+            float height = treeBounds.size.y;
+            slots.AddRange(OrnamentPlacer.Generate(cone, TotalHits - 1, height * OrnamentSizeRatio * OrnamentSpacing, random));
+            FillOrnamentBag();
+            counted = 0;
+            lastCountedTime = float.NegativeInfinity;
+            completed = false;
         }
 
         /// <inheritdoc/>

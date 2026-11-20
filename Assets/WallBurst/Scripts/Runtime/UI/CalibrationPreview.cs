@@ -77,7 +77,107 @@ namespace WallBurst
                 markers.Add(marker);
             }
 
+            CreateMagnifier(parent);
             SetView(1, false);
+        }
+
+        /// <summary>拡大鏡の大きさ（画面の単位）。</summary>
+        private const float LensSize = 240f;
+
+        /// <summary>拡大鏡のふちの太さ。</summary>
+        private const float LensBorder = 4f;
+
+        /// <summary>拡大鏡に映す範囲（深度画像の画素数、縦横とも）。</summary>
+        private const float LensPixels = 24f;
+
+        /// <summary>カーソルから拡大鏡までのずれ。</summary>
+        private const float LensOffset = 36f;
+
+        private RectTransform lens;
+        private RawImage lensImage;
+
+        private void CreateMagnifier(Transform parent)
+        {
+            Image frame = Ui.CreatePanel(parent, "拡大鏡", Green);
+            frame.raycastTarget = false;
+            lens = frame.rectTransform;
+            lens.anchorMin = new Vector2(0.5f, 0.5f);
+            lens.anchorMax = new Vector2(0.5f, 0.5f);
+            lens.pivot = new Vector2(0f, 0f);
+            lens.sizeDelta = new Vector2(LensSize, LensSize);
+
+            GameObject imageObject = new GameObject("拡大鏡の中身", typeof(RectTransform));
+            imageObject.transform.SetParent(lens, false);
+            lensImage = imageObject.AddComponent<RawImage>();
+            lensImage.raycastTarget = false;
+            lensImage.texture = texture;
+            RectTransform rect = lensImage.rectTransform;
+            rect.anchorMin = new Vector2(0.5f, 0.5f);
+            rect.anchorMax = new Vector2(0.5f, 0.5f);
+            rect.pivot = new Vector2(0.5f, 0.5f);
+            rect.sizeDelta = new Vector2(LensSize - LensBorder * 2f, LensSize - LensBorder * 2f);
+            rect.anchoredPosition = Vector2.zero;
+
+            // 真ん中の十字（ここがクリックされる位置）
+            for (int i = 0; i < 2; i++)
+            {
+                Image line = Ui.CreatePanel(lens, "十字", new Color(1f, 0.2f, 0.2f, 0.9f));
+                line.raycastTarget = false;
+                RectTransform lineRect = line.rectTransform;
+                lineRect.anchorMin = new Vector2(0.5f, 0.5f);
+                lineRect.anchorMax = new Vector2(0.5f, 0.5f);
+                lineRect.pivot = new Vector2(0.5f, 0.5f);
+                lineRect.anchoredPosition = Vector2.zero;
+                lineRect.sizeDelta = i == 0 ? new Vector2(LensSize - LensBorder * 2f, 2f) : new Vector2(2f, LensSize - LensBorder * 2f);
+            }
+
+            lens.gameObject.SetActive(false);
+        }
+
+        /// <summary>
+        /// カーソルのまわりを拡大して見せます（四隅をぴったり選ぶため）。
+        /// </summary>
+        /// <param name="screenPosition">カーソルの画面の位置</param>
+        /// <param name="active">出すとき true（見本の上にカーソルがなければ出しません）</param>
+        public void UpdateMagnifier(Vector2 screenPosition, bool active)
+        {
+            Vector2 image01;
+            if (!active || !area.gameObject.activeInHierarchy || !TryScreenToImage(screenPosition, out image01))
+            {
+                lens.gameObject.SetActive(false);
+                return;
+            }
+
+            lens.gameObject.SetActive(true);
+            lens.SetAsLastSibling();
+
+            // 映す範囲：カーソルの所を真ん中にする（テクスチャは上下が逆なので v は 1 - y）
+            float halfU = LensPixels * 0.5f / width;
+            float halfV = LensPixels * 0.5f / height;
+            float u = image01.x;
+            float v = 1f - image01.y;
+            lensImage.uvRect = mirror
+                ? new Rect(u + halfU, v - halfV, -halfU * 2f, halfV * 2f)
+                : new Rect(u - halfU, v - halfV, halfU * 2f, halfV * 2f);
+            lensImage.rectTransform.localEulerAngles = new Vector3(0f, 0f, -90f * rotation);
+
+            // 置く所：カーソルの右上。画面からはみ出すなら左・下へ
+            float scale = lens.lossyScale.x > 0f ? lens.lossyScale.x : 1f;
+            float sizePx = LensSize * scale;
+            float offsetPx = LensOffset * scale;
+            float x = screenPosition.x + offsetPx;
+            float y = screenPosition.y + offsetPx;
+            if (x + sizePx > Screen.width)
+            {
+                x = screenPosition.x - offsetPx - sizePx;
+            }
+
+            if (y + sizePx > Screen.height)
+            {
+                y = screenPosition.y - offsetPx - sizePx;
+            }
+
+            lens.position = new Vector3(x, y, 0f);
         }
 
         /// <summary>
@@ -89,6 +189,7 @@ namespace WallBurst
             area.gameObject.SetActive(visible);
             if (!visible)
             {
+                lens.gameObject.SetActive(false);
                 foreach (Text marker in markers)
                 {
                     marker.enabled = false;
